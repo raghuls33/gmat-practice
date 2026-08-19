@@ -1,0 +1,62 @@
+name: build and deploy
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      # No dependencies, so there is nothing to install.
+      - name: Run tests
+        run: node test.js
+
+      - name: Build the single-file app
+        run: sh build.sh
+
+      # The whole point of the project: dist must stay a self-contained file
+      # whose question data is byte-identical to src/data.json. test.js asserts
+      # this too, but only if dist already exists, so re-run it after building.
+      - name: Re-check the built artifact
+        run: node test.js
+
+      - name: Fail if the build is not reproducible
+        run: |
+          git diff --exit-code -- dist \
+            || { echo "dist/ is stale: run 'sh build.sh' and commit the result"; exit 1; }
+
+      - name: Upload Pages artifact
+        if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: dist
+
+  deploy:
+    needs: build
+    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4
