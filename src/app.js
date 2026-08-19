@@ -324,7 +324,7 @@ function enterSession(){
 /* Entry point from a paper card: resume if there is a saved attempt. */
 function openPaper(pid){
   if(Store.get(kProgress(pid), null)) resumePaper(pid);
-  else startPaper(pid, 'practice');
+  else chooseMode(pid);
 }
 
 function startPaper(pid, mode){
@@ -348,15 +348,89 @@ function restartPaper(pid){
   goHome();
 }
 
+
+/* ================= exam / practice mode =================
+   Practice: the clock is advisory and simply counts down.
+   Exam: when a subtest clock reaches zero that subtest locks, its answers
+   become read-only and the app moves on to the next unlocked subtest. When the
+   last one locks the paper is submitted automatically. */
+
+function isExam(){ return !!S && S.mode === 'exam'; }
+function tabLocked(i){ return !!(S && S.locked && S.locked[i]); }
+/* Read-only: after submitting, or inside a subtest whose clock has run out. */
+function readOnly(){ return !S || S.submitted || tabLocked(S.tab); }
+
+function fmtClock(sec){
+  sec = Math.max(0, Math.round(sec || 0));
+  const m = Math.floor(sec / 60), r = sec % 60;
+  return String(m).padStart(2, '0') + ':' + String(r).padStart(2, '0');
+}
+function fmtSpent(sec){
+  sec = Math.max(0, Math.round(sec || 0));
+  const m = Math.floor(sec / 60), r = sec % 60;
+  return m ? (m + ' min ' + r + ' s') : (r + ' s');
+}
+
+function nextOpenTab(from){
+  for (let i = from + 1; i < SECT.length; i++) if (!tabLocked(i)) return i;
+  for (let i = 0; i < SECT.length; i++) if (!tabLocked(i)) return i;
+  return -1;
+}
+
+function lockSubtest(i){
+  if (tabLocked(i)) return;
+  S.locked[i] = true;
+  saveProgress(true);
+  const nxt = nextOpenTab(i);
+  if (nxt < 0) {                       // every subtest is out of time
+    alert('Time is up on the final subtest. Your paper has been submitted.');
+    finish(true);
+    return;
+  }
+  alert('Time is up on ' + SECT[i].name + '.\n\nThat subtest is now locked. ' +
+        'Moving on to ' + SECT[nxt].name + '.');
+  setTab(nxt);
+}
+
+/* ---------- mode chooser ---------- */
+function closeDlg(){
+  const el = document.getElementById('dlg');
+  if (el) el.classList.add('hide');
+}
+
+function chooseMode(pid){
+  const el = document.getElementById('dlg');
+  document.getElementById('dlgBox').innerHTML =
+    '<div class="mhead"><strong id="dlgTitle">Paper ' + pid + '</strong><span class="spacer"></span>' +
+    '<button class="btn sm" onclick="closeDlg()">Cancel</button></div>' +
+    '<div class="mbody">' +
+      '<p class="muted" style="margin-top:0">How do you want to sit this paper? ' +
+      'The questions and the mark scheme are identical either way.</p>' +
+      '<div class="modepick">' +
+        '<button class="modecard" onclick="closeDlg();startPaper(' + pid + ',&quot;exam&quot;)">' +
+          '<strong>Exam mode</strong>' +
+          '<span>Each subtest locks the moment its clock hits zero. Answers become ' +
+          'read-only and you are moved to the next subtest. 25 / 25 / 25 / 90 minutes.</span></button>' +
+        '<button class="modecard" onclick="closeDlg();startPaper(' + pid + ',&quot;practice&quot;)">' +
+          '<strong>Practice mode</strong>' +
+          '<span>The clock still runs and time spent is still recorded, but nothing ever ' +
+          'locks. Work at your own pace.</span></button>' +
+      '</div></div>';
+  el.classList.remove('hide');
+}
+
 /* ================= timer ================= */
 function startTimer(){
   clearInterval(tick);
   tick = setInterval(()=>{
     if(!S || S.submitted) return;
-    if(S.left[S.tab] > 0) S.left[S.tab]--;
-    S.spent[S.tab]++;
-    if(S.spent[S.tab] % 10 === 0) saveProgress(true);
+    const i = S.tab;
+    if(tabLocked(i)) { paintTimer(); return; }   // a locked subtest burns no clock
+    if(S.left[i] > 0) S.left[i]--;
+    S.spent[i]++;
+    if(S.spent[i] % 10 === 0) saveProgress(true);
     paintTimer();
+    if(S.left[i] === 0 && isExam()) lockSubtest(i);
   },1000);
   paintTimer();
 }
@@ -364,17 +438,25 @@ function paintTimer(){
   const el = document.getElementById('timer');
   if(!S){el.classList.add('hide');return;}
   const t = S.left[S.tab];
-  const m = String(Math.floor(t/60)).padStart(2,'0'), s = String(t%60).padStart(2,'0');
-  el.textContent = t>0 ? `${m}:${s}` : 'TIME UP';
-  el.className = 'timer' + (t<=120 ? ' low' : '');
+  if(tabLocked(S.tab)){
+    el.textContent = 'LOCKED';
+    el.className = 'timer low';
+    el.title = SECT[S.tab].name + ' is locked: its time ran out.';
+    return;
+  }
+  el.textContent = t>0 ? fmtClock(t) : 'TIME UP';
+  el.className = 'timer' + (t<=120 ? ' low' : '') + (isExam() ? ' exam' : '');
+  el.title = (isExam() ? 'Exam mode' : 'Practice mode') + ' \u2014 ' + SECT[S.tab].name +
+             ', ' + fmtSpent(S.spent[S.tab]) + ' spent';
 }
 
 /* ================= tabs ================= */
 function tabsHtml(){
   return SECT.map((s,i)=>{
     const done = Object.keys(S.ans[s.k]).length;
-    return `<button class="tab ${i===S.tab?'on':''}" onclick="setTab(${i})">${s.name}
-      <span class="cnt">${done}/${s.n}</span></button>`;
+    const lk = tabLocked(i) ? ' <span class="lockmark" title="Locked: time ran out">&#128274;</span>' : '';
+    return `<button class="tab ${i===S.tab?'on':''}${tabLocked(i)?' locked':''}" onclick="setTab(${i})">${s.name}
+      <span class="cnt">${done}/${s.n}</span>${lk}</button>`;
   }).join('');
 }
 function setTab(i){ S.tab=i; S.cur=0; S.slot=0; saveProgress(true); render(); window.scrollTo(0,0); }
@@ -383,12 +465,12 @@ function prevTab(){ if(S.tab>0) setTab(S.tab-1); }
 
 /* ================= answering ================= */
 function pick(sec, key, val){
-  if(S.submitted) return;
+  if(readOnly()) return;
   S.ans[sec][key] = val;
   afterAnswer(sec, key);
 }
 function setEq(i, v, el){
-  if(S.submitted) return;
+  if(readOnly()) return;
   const cur = S.ans.me[i] || {};
   cur[v] = el.value.trim();
   const filled = Object.values(cur).filter(x=>x!=='').length;
@@ -397,7 +479,7 @@ function setEq(i, v, el){
   paintFoot(); paintTabs(); paintChips();
 }
 function pickFs(i, which, opt){
-  if(S.submitted) return;
+  if(readOnly()) return;
   const cur = S.ans.fs[i] || {};
   cur[which] = opt;
   S.ans.fs[i] = cur;
@@ -600,6 +682,8 @@ function onKey(e){
   const help = document.getElementById('help');
 
   if (e.key === 'Escape') {
+    const dlg = document.getElementById('dlg');
+    if (dlg && !dlg.classList.contains('hide')) { closeDlg(); e.preventDefault(); return; }
     if (help && !help.classList.contains('hide')) { toggleHelp(); e.preventDefault(); return; }
     if (typingInField() && document.activeElement.blur) { document.activeElement.blur(); e.preventDefault(); }
     return;
@@ -688,13 +772,17 @@ function render(keepScroll){
 }
 
 function head(title, sub, intro){
+  const locked = (S && !S.submitted && tabLocked(S.tab)) ? `
+    <div class="note warnbox"><p><strong>${SECT[S.tab].name} is locked.</strong>
+    Its ${SECT[S.tab].mins}-minute clock ran out, so these answers are read-only.
+    You spent ${fmtSpent(S.spent[S.tab])} here.</p></div>` : '';
   return `<div style="margin-top:14px">
     <div class="bar">${title}</div><div class="bar2">${sub}</div></div>
-    <div class="note">${intro}</div>`;
+    ${locked}<div class="note">${intro}</div>`;
 }
 
 function renderFs(){
-  const rev = S.submitted;
+  const rev = S.submitted, ro = readOnly();
   let h = head('Core Module &mdash; Subtest 1',
     'Figure Sequences &middot; 20 items &middot; 2 marks each &middot; 40 marks &middot; 25 minutes',
     `<p>Each item shows four 5&times;5 matrices. The figures change <strong>position</strong>,
@@ -716,7 +804,7 @@ function renderFs(){
     function col(which, opts, correct){
       const inner = opts.map((o,k)=>{
         const n = k+1;
-        let cls = 'fsopt' + (a[which]===n ? ' sel' : '');
+        let cls = 'fsopt' + (a[which]===n ? ' sel' : '') + (ro ? ' dis' : '');
         if(rev){
           if(n===correct) cls = 'fsopt correct';
           else if(a[which]===n) cls = 'fsopt wrong';
@@ -748,7 +836,7 @@ function renderFs(){
 }
 
 function renderMe(){
-  const rev = S.submitted;
+  const rev = S.submitted, ro = readOnly();
   let h = head('Core Module &mdash; Subtest 2',
     'Mathematical Equations &middot; 20 systems &middot; 2 marks each &middot; 40 marks &middot; 25 minutes',
     `<p>Solve each system so that <strong>all</strong> its equations hold at the same time.
@@ -762,7 +850,7 @@ function renderMe(){
       if(rev) cls += (String(a[v])===String(it.sol[v]) ? ' ok' : ' no');
       return `<span class="${cls}">${v} =
         <input type="number" min="1" max="20" value="${a[v]!==undefined?a[v]:''}"
-        ${rev?'disabled':''} oninput="setEq(${it.n},'${v}',this)"></span>`;
+        ${ro?'disabled':''} oninput="setEq(${it.n},'${v}',this)"></span>`;
     }).join('');
     let solved = '';
     if(rev){
@@ -797,7 +885,7 @@ function latinTable(it, reveal){
 }
 
 function renderLs(){
-  const rev = S.submitted;
+  const rev = S.submitted, ro = readOnly();
   let h = head('Core Module &mdash; Subtest 3',
     'Latin Squares &middot; 20 items &middot; 2 marks each &middot; 40 marks &middot; 25 minutes',
     `<p>Each 5&times;5 grid may contain the letters A, B, C, D and E only. Every letter appears
@@ -810,7 +898,7 @@ function renderLs(){
     const btns = 'ABCDE'.split('').map(L=>{
       let cls='lbtn'+(a===L?' sel':'');
       if(rev){ cls='lbtn'+(L===it.ans?' correct':(a===L?' wrong':'')); }
-      return `<button class="${cls}" onclick="pick('ls',${it.n},'${L}')">${L}</button>`;
+      return `<button class="${cls}" ${ro?'disabled':''} onclick="pick('ls',${it.n},'${L}')">${L}</button>`;
     }).join('');
     let solved='';
     if(rev){
@@ -829,7 +917,7 @@ function renderLs(){
 }
 
 function renderSub(){
-  const rev = S.submitted;
+  const rev = S.submitted, ro = readOnly();
   let h = head('Subject Module', 'Data Science &middot; 40 questions &middot; 2 marks each &middot; 80 marks &middot; 90 minutes',
     `<p>Each testlet begins with a short input text. Answer the single-choice questions that follow;
      each has 4 options and exactly one correct answer. The questions test
@@ -841,7 +929,7 @@ function renderSub(){
     t.questions.forEach(q=>{
       const a = S.ans.sub[q.n];
       const opts = q.options.map((o,i)=>{
-        let cls='opt'+(a===i?' sel':'');
+        let cls='opt'+(a===i?' sel':'')+(ro?' dis':'');
         if(rev){ cls='opt dis'+(i===q.ans?' correct':(a===i?' wrong':'')); }
         return `<div class="${cls}" onclick="pick('sub',${q.n},${i})">
           <span class="k">${'abcd'[i]})</span><span>${o}</span></div>`;
@@ -925,9 +1013,9 @@ function recordAttempt(){
   });
 }
 
-function finish(){
+function finish(force){
   const answered = SECT.reduce((n,s)=>n+Object.keys(S.ans[s.k]).length,0);
-  if(!S.submitted && answered<100){
+  if(!force && !S.submitted && answered<100){
     if(!confirm(`You have answered ${answered} of 100 questions. Submit anyway?\n\n`+
       `There is no negative marking, so unanswered questions are a pure loss.`)) return;
   }
@@ -958,7 +1046,9 @@ function showResults(){
   <div class="card">
     <div class="score"><div class="big">${r.total}<span style="font-size:20px;color:var(--muted)">/200</span></div>
       <div><div style="font-weight:700;color:${bcol}">${band}</div>
-      <div class="muted" style="font-size:13px">${Math.round(r.total/2)}% overall</div></div></div>
+      <div class="muted" style="font-size:13px">${Math.round(r.total/2)}% overall &middot;
+      ${S.mode==='exam'?'exam':'practice'} mode &middot;
+      ${fmtSpent(S.spent.reduce((a,b)=>a+b,0))} spent</div></div></div>
     <h3>By subtest</h3><div class="bars">
       ${bar('Figure Sequences', r.fs, 40)}
       ${bar('Mathematical Equations', r.me, 40)}
@@ -971,6 +1061,13 @@ function showResults(){
       ${bar('Medium difficulty', r.byLvl.medium[0], r.byLvl.medium[1])}
       ${bar('High difficulty', r.byLvl.high[0], r.byLvl.high[1])}
     </div>
+    <h3>Time spent</h3>
+    <table><thead><tr><th>Subtest</th><th>Allowed</th><th>Spent</th></tr></thead><tbody>
+      ${SECT.map((sec,i)=>`<tr><td>${sec.name}</td><td>${sec.mins} min</td>
+        <td>${fmtSpent(S.spent[i])}</td></tr>`).join('')}
+      <tr><td><strong>Whole paper</strong></td><td>180 min</td>
+        <td><strong>${fmtSpent(S.spent.reduce((a,b)=>a+b,0))}</strong></td></tr>
+    </tbody></table>
     <h3>Subject Module by testlet</h3><div class="bars">
       ${r.byTestlet.map(t=>bar(t.name.replace(/^Testlet \d+ &mdash; /,'').replace(/^Testlet \d+ — /,''), t.got, t.tot)).join('')}
     </div>
@@ -996,9 +1093,8 @@ function review(){
 }
 function retake(){
   const id = S.p.id;
-  document.getElementById('foot').querySelector('.btn.pri').textContent = 'Submit paper';
-  document.getElementById('foot').querySelector('.btn.pri').onclick = finish;
-  startPaper(id);
+  clearProgress(id);
+  chooseMode(id);
 }
 
 /* Flush before the tab goes away; pagehide is the reliable one on mobile. */

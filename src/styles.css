@@ -192,3 +192,23 @@ th{background:#f7f0f4;font-weight:600}
 .mbody td{vertical-align:middle}
 kbd{display:inline-block;font-family:"SF Mono",Menlo,Consolas,monospace;font-size:12px;
   background:#f2f2f4;border:1px solid var(--line);border-bottom-width:2px;border-radius:5px;padding:2px 6px}
+
+/* ---------- exam mode ---------- */
+.timer.exam{background:#f7f0f4;color:var(--crimson)}
+.timer.low{background:#fdecec;color:var(--bad)}
+.tab.locked{opacity:.62}
+.lockmark{font-size:11px;margin-left:3px}
+.opt.dis,.fsopt.dis{cursor:default}
+.opt.dis:hover{border-color:var(--line);background:#fff}
+.fsopt.dis:hover{border-color:transparent}
+.lbtn:disabled{opacity:.5;cursor:not-allowed}
+.vin input:disabled{background:#f4f4f6;color:var(--muted)}
+
+/* ---------- mode chooser ---------- */
+.modepick{display:grid;gap:11px;grid-template-columns:1fr}
+.modecard{display:block;text-align:left;border:1px solid var(--line);border-radius:10px;
+  background:#fff;padding:14px 16px;font:inherit;cursor:pointer;transition:.12s}
+.modecard:hover{border-color:var(--crimson);background:#fdfafc;box-shadow:0 2px 10px rgba(0,0,0,.05)}
+.modecard strong{display:block;color:var(--crimson);font-size:15px;margin-bottom:4px}
+.modecard span{display:block;color:var(--muted);font-size:13px;line-height:1.5}
+@media(min-width:620px){.modepick{grid-template-columns:1fr 1fr}}
