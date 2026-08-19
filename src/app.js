@@ -442,8 +442,42 @@ function goHome(){
     <strong>B</strong> blue, <strong>O</strong> orange) to every coloured figure, so the
     figure sequences can be read without relying on hue. The tags also appear in the
     printed paper.</p>
+  </div>
+  <h2>About this material</h2>
+  <div class="card about">
+    <p style="margin-top:0"><strong>Maintained by</strong> raghuls33 &middot;
+    <a href="https://github.com/raghuls33/gmat-practice" rel="noopener noreferrer">source on GitHub</a></p>
+    <p class="muted" style="font-size:12.8px">Spotted a wrong answer, a figure sequence that does not
+    follow, or a Latin square that does not solve uniquely? Corrections are welcome &mdash; please quote
+    the paper number and the question number.</p>
+    <p id="contact" class="contact"><span class="muted" style="font-size:12.8px">Loading contact&hellip;</span></p>
+    <p class="muted" style="font-size:12px;margin-bottom:0"><strong>Unofficial.</strong> Independent practice
+    material. The task types follow the g.a.s.t. / TestDaF-Institut preparatory materials for the dMAT, not
+    the question formats used by the real GMAT. Not produced, endorsed or reviewed by GMAC, g.a.s.t., the
+    TestDaF-Institut, or any university.</p>
   </div>`;
+  paintContact();
   window.scrollTo(0,0);
+}
+
+/* The address is assembled at runtime from fragments instead of sitting in the
+   page source as plain text. That defeats the simplest address harvesters only;
+   anyone who runs the page can still read it. It is a speed bump, not privacy. */
+const MAIL_PARTS = ["ragulsoct04", "gmail", "com"];
+function paintContact(){
+  const el = document.getElementById("contact");
+  if (!el) return;
+  const addr = MAIL_PARTS[0] + String.fromCharCode(64) + MAIL_PARTS[1] + "." + MAIL_PARTS[2];
+  const a = document.createElement("a");
+  a.href = "mailto:" + addr + "?subject=" +
+           encodeURIComponent("GMAT Practice Suite — content report");
+  a.textContent = addr;
+  a.setAttribute("aria-label", "Email " + addr + " to report a problem with the question content");
+  el.textContent = "";
+  const lab = document.createElement("strong");
+  lab.textContent = "Content queries: ";
+  el.appendChild(lab);
+  el.appendChild(a);
 }
 
 function enterSession(){

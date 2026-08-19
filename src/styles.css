@@ -257,6 +257,12 @@ kbd{display:inline-block;font-family:"SF Mono",Menlo,Consolas,monospace;font-siz
    Print the paper, not the app: the chrome, the clock, the navigator and
    anything you can click on disappear, and no question is split across a
    page boundary. */
+/* About / contact block on the home screen. */
+.about{border-left:3px solid var(--crimson)}
+.about a{color:var(--crimson);font-weight:600}
+.contact{margin:11px 0 13px;font-size:13.5px}
+.contact a{word-break:break-all}
+
 @media print{
   @page{margin:14mm 12mm}
   header,.tabs,.footbar,.navpanel,.modal,.flagbtn,.filterbar,#timer,
@@ -273,6 +279,7 @@ kbd{display:inline-block;font-family:"SF Mono",Menlo,Consolas,monospace;font-siz
   .bar2{background:#fff;color:#000;border:1px solid #000;border-top:0;
     break-after:avoid;page-break-after:avoid}
   h1,h2,h3{color:#000;break-after:avoid;page-break-after:avoid}
+  .about{display:none !important}
   .note,.expl{background:#fff;border-left:2px solid #000;border-radius:0;
     break-inside:avoid;page-break-inside:avoid}
   .opt,.fsopt,.lbtn{border-color:#666;background:#fff !important;box-shadow:none !important}
