@@ -1858,6 +1858,9 @@ function showSignupErrors(errors) {
 async function initSignup() {
   const wrap = suEl('signupWrap');
   if (!wrap || typeof fetch !== 'function') return;
+  /* Opened straight off the filesystem there is no origin to ask, and the
+     attempt logs a console error in the offline build for no reason. */
+  if (location.protocol === 'file:') return;
   try {
     const res = await fetch('/api/signup', { method: 'GET' });
     if (!res.ok) return;
