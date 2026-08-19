@@ -12,6 +12,7 @@
   <div class="brand">dMAT<small>Practice Suite</small></div>
   <div class="spacer"></div>
   <div id="timer" class="timer hide">00:00</div>
+  <button class="btn sm" id="helpBtn" onclick="toggleHelp()" aria-label="Keyboard shortcuts" title="Keyboard shortcuts (?)">?</button>
   <button class="btn sm" id="homeBtn" onclick="goHome()">All papers</button>
 </div></header>
 
@@ -19,13 +20,35 @@
 
 <div class="wrap" id="app"></div>
 
+<div class="navpanel hide" id="navpanel">
+  <div class="np">
+    <div class="nphead">
+      <strong id="npTitle">Questions</strong>
+      <span class="legend"><i class="lg done"></i>answered <i class="lg todo"></i>unanswered
+        <i class="lg flag"></i>flagged</span>
+      <span class="spacer"></span>
+      <button class="btn sm" onclick="toggleNav()" aria-label="Close navigator">Close</button>
+    </div>
+    <div class="chips" id="chips"></div>
+  </div>
+</div>
+
 <div class="footbar hide" id="foot"><div class="fb">
   <span id="fstat" class="muted" style="font-size:13px"></span>
   <div class="prog"><i id="fprog"></i></div>
   <button class="btn" onclick="prevTab()">&#8592; Prev</button>
   <button class="btn" onclick="nextTab()">Next &#8594;</button>
+  <button class="btn" id="navBtn" onclick="toggleNav()" aria-expanded="false">Navigator</button>
   <button class="btn pri" onclick="finish()">Submit paper</button>
 </div></div>
+
+<div class="modal hide" id="help" role="dialog" aria-modal="true" aria-label="Keyboard shortcuts">
+  <div class="mbox">
+    <div class="mhead"><strong>Keyboard shortcuts</strong><span class="spacer"></span>
+      <button class="btn sm" onclick="toggleHelp()">Close</button></div>
+    <div class="mbody" id="helpBody"></div>
+  </div>
+</div>
 
 <script id="dmat-data" type="application/json">null</script><!--__DATA__-->
 <script src="app.js"></script><!--__JS__-->

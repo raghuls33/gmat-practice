@@ -199,6 +199,7 @@ function newSession(pid, mode){
           left:SECT.map(s=>s.mins*60),
           spent:SECT.map(()=>0),
           locked:SECT.map(()=>false),
+          cur:0, slot:0,
           started:Date.now()};
 }
 
@@ -376,7 +377,7 @@ function tabsHtml(){
       <span class="cnt">${done}/${s.n}</span></button>`;
   }).join('');
 }
-function setTab(i){ S.tab=i; saveProgress(true); render(); window.scrollTo(0,0); }
+function setTab(i){ S.tab=i; S.cur=0; S.slot=0; saveProgress(true); render(); window.scrollTo(0,0); }
 function nextTab(){ if(S.tab<3) setTab(S.tab+1); }
 function prevTab(){ if(S.tab>0) setTab(S.tab-1); }
 
@@ -384,8 +385,7 @@ function prevTab(){ if(S.tab>0) setTab(S.tab-1); }
 function pick(sec, key, val){
   if(S.submitted) return;
   S.ans[sec][key] = val;
-  saveProgress();
-  render(true);
+  afterAnswer(sec, key);
 }
 function setEq(i, v, el){
   if(S.submitted) return;
@@ -394,16 +394,276 @@ function setEq(i, v, el){
   const filled = Object.values(cur).filter(x=>x!=='').length;
   if(filled===0) delete S.ans.me[i]; else S.ans.me[i]=cur;
   saveProgress();
-  paintFoot(); paintTabs();
+  paintFoot(); paintTabs(); paintChips();
 }
 function pickFs(i, which, opt){
   if(S.submitted) return;
   const cur = S.ans.fs[i] || {};
   cur[which] = opt;
   S.ans.fs[i] = cur;
-  saveProgress();
-  render(true);
+  afterAnswer('fs', i);
 }
+
+
+/* ================= flags, navigator, keyboard =================
+   The figure-sequence tab renders ~290 KB of HTML, so moving the cursor or
+   picking an option patches the existing DOM instead of rebuilding it. */
+
+function secKey(i){ return SECT[i].k; }
+function curSec(){ return secKey(S.tab); }
+
+/* Question numbers of the active subtest, in display order. */
+function qNums(){
+  const k = curSec();
+  if (k === 'sub') return S.p.subject.reduce((a,t)=>a.concat(t.questions.map(q=>q.n)), []);
+  return S.p[k].map(it => it.n);
+}
+
+function isFlagged(sec, n){ return !!(S.flags[sec] && S.flags[sec][n]); }
+
+/* 'none' | 'part' | 'done' — 'part' only exists where a question carries more
+   than one answer: figure sequences (two images) and equation systems. */
+function answerState(sec, n){
+  const a = S.ans[sec][n];
+  if (a === undefined || a === null) return 'none';
+  if (sec === 'fs') {
+    const one = a.a1 !== undefined, two = a.a2 !== undefined;
+    if (one && two) return 'done';
+    return (one || two) ? 'part' : 'none';
+  }
+  if (sec === 'me') {
+    const it = S.p.me.find(x => x.n === n);
+    if (!it) return 'none';
+    const filled = it.vars.filter(v => a[v] !== undefined && a[v] !== '').length;
+    if (filled === 0) return 'none';
+    return filled === it.vars.length ? 'done' : 'part';
+  }
+  return 'done';
+}
+
+function toggleFlag(sec, n){
+  if (!S) return;
+  if (!S.flags[sec]) S.flags[sec] = {};
+  if (S.flags[sec][n]) delete S.flags[sec][n];
+  else S.flags[sec][n] = true;
+  saveProgress();
+  const b = document.querySelector('[data-flag="' + sec + '-' + n + '"]');
+  if (b) {
+    const on = isFlagged(sec, n);
+    b.classList.toggle('on', on);
+    b.setAttribute('aria-pressed', on ? 'true' : 'false');
+  }
+  paintChips();
+}
+
+function flagBtn(sec, n){
+  const on = isFlagged(sec, n);
+  return '<button class="flagbtn' + (on ? ' on' : '') + '" data-flag="' + sec + '-' + n + '"' +
+    ' type="button" aria-pressed="' + (on ? 'true' : 'false') + '"' +
+    ' aria-label="Flag question ' + n + ' for review"' +
+    ' title="Flag for review (f)" onclick="toggleFlag(&quot;' + sec + '&quot;,' + n + ')">\u2691</button>';
+}
+
+/* ---------- navigator panel ---------- */
+function toggleNav(){
+  const el = document.getElementById('navpanel');
+  const open = el.classList.contains('hide');
+  el.classList.toggle('hide', !open);
+  document.getElementById('navBtn').setAttribute('aria-expanded', open ? 'true' : 'false');
+  if (open) paintChips();
+}
+
+function paintChips(){
+  const box = document.getElementById('chips');
+  if (!box || !S || !S.p) return;
+  const sec = curSec(), nums = qNums();
+  const t = document.getElementById('npTitle');
+  if (t) t.textContent = SECT[S.tab].name;
+  box.innerHTML = nums.map((n, i) => {
+    const st = answerState(sec, n);
+    const cls = ['chip', st === 'done' ? 'done' : (st === 'part' ? 'part' : 'todo')];
+    if (isFlagged(sec, n)) cls.push('flag');
+    if (i === S.cur) cls.push('cur');
+    const lbl = 'Question ' + n + ', ' + (st === 'done' ? 'answered' : st === 'part' ? 'partly answered' : 'unanswered') +
+      (isFlagged(sec, n) ? ', flagged' : '');
+    return '<button class="' + cls.join(' ') + '" type="button" onclick="gotoQ(' + i + ')"' +
+      ' aria-label="' + lbl + '">' + n + '</button>';
+  }).join('');
+}
+
+function qEl(i){
+  const nums = qNums();
+  if (i < 0 || i >= nums.length) return null;
+  return document.getElementById('q-' + curSec() + '-' + nums[i]);
+}
+
+function paintCur(){
+  document.querySelectorAll('.card.cur, .q.cur').forEach(e => e.classList.remove('cur'));
+  const el = qEl(S.cur);
+  if (el) el.classList.add('cur');
+  paintChips();
+}
+
+function setCur(i, scroll){
+  const nums = qNums();
+  if (!nums.length) return;
+  S.cur = Math.max(0, Math.min(nums.length - 1, i));
+  S.slot = 0;
+  paintCur();
+  if (scroll !== false) {
+    const el = qEl(S.cur);
+    if (el && el.scrollIntoView) el.scrollIntoView({block: 'start', behavior: 'smooth'});
+  }
+}
+
+function gotoQ(i){
+  setCur(i, true);
+  if (typeof window !== 'undefined' && window.innerWidth < 700) toggleNav();
+}
+
+/* ---------- in-place answer painting ---------- */
+function afterAnswer(sec, n){
+  saveProgress();
+  paintTabs(); paintFoot(); paintChips();
+  const el = document.getElementById('q-' + sec + '-' + n);
+  if (!el) { render(true); return; }
+  if (sec === 'ls') {
+    const a = S.ans.ls[n];
+    el.querySelectorAll('.lbtn').forEach(b => {
+      const on = b.textContent.trim() === a;
+      b.classList.toggle('sel', on);
+      b.setAttribute('aria-checked', on ? 'true' : 'false');
+      b.tabIndex = on ? 0 : -1;
+    });
+  } else if (sec === 'sub') {
+    const a = S.ans.sub[n];
+    el.querySelectorAll('.opt').forEach((o, i) => {
+      const on = i === a;
+      o.classList.toggle('sel', on);
+      o.setAttribute('aria-checked', on ? 'true' : 'false');
+      o.tabIndex = on ? 0 : -1;
+    });
+  } else if (sec === 'fs') {
+    const a = S.ans.fs[n] || {};
+    el.querySelectorAll('.fscol').forEach(col => {
+      const which = col.getAttribute('data-slot');
+      col.querySelectorAll('.fsopt').forEach((o, i) => {
+        const on = a[which] === i + 1;
+        o.classList.toggle('sel', on);
+        o.setAttribute('aria-checked', on ? 'true' : 'false');
+        o.tabIndex = on ? 0 : -1;
+      });
+    });
+  }
+}
+
+/* ---------- keyboard ---------- */
+function typingInField(){
+  const a = document.activeElement;
+  if (!a) return false;
+  const tag = (a.tagName || '').toLowerCase();
+  return tag === 'input' || tag === 'textarea' || tag === 'select' || a.isContentEditable === true;
+}
+
+function optionCount(){
+  const k = curSec();
+  if (k === 'ls') return 5;
+  if (k === 'sub') return 4;
+  if (k === 'fs') return 3;
+  return 0;
+}
+
+function chooseOption(idx){
+  const k = curSec(), n = qNums()[S.cur];
+  if (n === undefined) return;
+  if (k === 'ls')  { if (idx < 5) pick('ls', n, 'ABCDE'[idx]); return; }
+  if (k === 'sub') { if (idx < 4) pick('sub', n, idx); return; }
+  if (k === 'fs')  { if (idx < 3) pickFs(n, S.slot ? 'a2' : 'a1', idx + 1); return; }
+}
+
+function setSlot(v){
+  if (curSec() !== 'fs') return;
+  S.slot = v ? 1 : 0;
+  const el = qEl(S.cur);
+  if (el) el.querySelectorAll('.fscol').forEach(c =>
+    c.classList.toggle('active', (c.getAttribute('data-slot') === 'a2') === !!S.slot));
+}
+
+function focusFirstInput(){
+  const el = qEl(S.cur);
+  const inp = el && el.querySelector('input');
+  if (inp) inp.focus();
+}
+
+function onKey(e){
+  if (e.ctrlKey || e.metaKey || e.altKey) return;
+  const help = document.getElementById('help');
+
+  if (e.key === 'Escape') {
+    if (help && !help.classList.contains('hide')) { toggleHelp(); e.preventDefault(); return; }
+    if (typingInField() && document.activeElement.blur) { document.activeElement.blur(); e.preventDefault(); }
+    return;
+  }
+  if (e.key === '?' && !typingInField()) { toggleHelp(); e.preventDefault(); return; }
+  if (typingInField()) return;               // never hijack a number input
+  if (!S || !S.p) return;
+  const nums = qNums();
+  if (!nums.length) return;
+  if (!document.getElementById('q-' + curSec() + '-' + nums[0])) return;  // not on a subtest
+
+  const k = e.key;
+  if (k === 'j' || k === 'ArrowDown') { setCur(S.cur + 1); e.preventDefault(); return; }
+  if (k === 'k' || k === 'ArrowUp')   { setCur(S.cur - 1); e.preventDefault(); return; }
+  if (k === 'ArrowRight') { if (curSec() === 'fs') { setSlot(1); e.preventDefault(); } return; }
+  if (k === 'ArrowLeft')  { if (curSec() === 'fs') { setSlot(0); e.preventDefault(); } return; }
+  if (k === 'f' || k === 'F') { toggleFlag(curSec(), nums[S.cur]); e.preventDefault(); return; }
+  if (k === 'n' || k === 'N') { toggleNav(); e.preventDefault(); return; }
+  if (k === 'Enter') {
+    if (curSec() === 'me') { focusFirstInput(); e.preventDefault(); return; }
+    if (curSec() === 'fs' && !S.slot) { setSlot(1); e.preventDefault(); return; }
+    setCur(S.cur + 1); e.preventDefault(); return;
+  }
+
+  const max = optionCount();
+  if (!max) return;
+  if (k >= '1' && k <= '9') {
+    const i = Number(k) - 1;
+    if (i < max) { chooseOption(i); e.preventDefault(); }
+    return;
+  }
+  const li = 'abcde'.indexOf(k.toLowerCase());
+  if (li >= 0 && li < max) { chooseOption(li); e.preventDefault(); }
+}
+
+/* ---------- shortcuts overlay ---------- */
+const HELP_ROWS = [
+  ['j / \u2193', 'Next question'],
+  ['k / \u2191', 'Previous question'],
+  ['1 \u2013 4 or a \u2013 d', 'Select an option. Latin Squares use 1\u20135 / a\u2013e, Figure Sequences 1\u20133 / a\u2013c.'],
+  ['\u2190 / \u2192', 'Figure Sequences: switch between Image 1 and Image 2'],
+  ['Enter', 'Advance: Image 1 \u2192 Image 2, otherwise on to the next question. On an equation system, jump into the first box.'],
+  ['f', 'Flag the current question for review'],
+  ['n', 'Open or close the question navigator'],
+  ['?', 'Show or hide this list'],
+  ['Esc', 'Close this list, or step out of a number box']
+];
+
+function toggleHelp(){
+  const el = document.getElementById('help');
+  if (!el) return;
+  const opening = el.classList.contains('hide');
+  if (opening) {
+    document.getElementById('helpBody').innerHTML =
+      '<table><tbody>' + HELP_ROWS.map(r =>
+        '<tr><td style="white-space:nowrap"><kbd>' + r[0] + '</kbd></td><td>' + r[1] + '</td></tr>').join('') +
+      '</tbody></table><p class="muted" style="font-size:12.5px;margin:10px 0 0">' +
+      'Shortcuts are ignored while the cursor is in a number box, so typing an equation answer ' +
+      'never triggers one.</p>';
+  }
+  el.classList.toggle('hide', !opening);
+}
+
+if (typeof document !== 'undefined') document.addEventListener('keydown', onKey);
 
 /* ================= rendering ================= */
 function paintTabs(){ document.getElementById('tabsIn').innerHTML = tabsHtml(); }
@@ -422,6 +682,8 @@ function render(keepScroll){
   else if(s.k==='ls') h = renderLs();
   else h = renderSub();
   document.getElementById('app').innerHTML = h;
+  if (S.cur === undefined) S.cur = 0;
+  paintCur();
   if(keepScroll) window.scrollTo(0,y);
 }
 
@@ -463,7 +725,7 @@ function renderFs(){
         return `<div class="${cls}" onclick="pickFs(${it.n},'${which}',${n})">
           <div class="cap">Matrix ${n}</div>${matSvg(o,15)}</div>`;
       }).join('');
-      return `<div class="fscol"><h4>${which==='a1'?'Image 1 (Matrix 5)':'Image 2 (Matrix 6)'}</h4>
+      return `<div class="fscol" data-slot="${which}"><h4>${which==='a1'?'Image 1 (Matrix 5)':'Image 2 (Matrix 6)'}</h4>
         <div class="fsstack">${inner}</div></div>`;
     }
     let solved = '';
@@ -474,8 +736,10 @@ function renderFs(){
         Image 2 = Matrix ${it.a2} &mdash; you scored <strong>${got}/2</strong>.<br>
         ${it.rules.map(r=>esc(r)).join('<br>')}</div>`;
     }
-    h += `<div class="card"><div class="qh"><span class="qn">${it.n}.</span>
-      <span><span class="tag ${it.lvl}">${it.lvl}</span>${note}</span></div>
+    h += `<div class="card" id="q-fs-${it.n}" data-sec="fs" data-n="${it.n}">
+      <div class="qh"><span class="qn">${it.n}.</span>
+      <span><span class="tag ${it.lvl}">${it.lvl}</span>${note}</span>
+      <span class="spacer"></span>${flagBtn('fs',it.n)}</div>
       <div class="fsrow">${series}</div>
       <div class="fscols">${col('a1',it.o1,it.a1)}${col('a2',it.o2,it.a2)}</div>
       ${solved}</div>`;
@@ -507,8 +771,10 @@ function renderMe(){
         it.vars.map(v=>`${v} = ${it.sol[v]}`).join(', ')} &mdash;
         <strong>${ok?'2/2 marks':'0/2 marks'}</strong></div>`;
     }
-    h += `<div class="card"><div class="qh"><span class="qn">${it.n}.</span>
-      <span><span class="tag ${it.lvl}">${it.lvl}</span>${note}</span></div>
+    h += `<div class="card" id="q-me-${it.n}" data-sec="me" data-n="${it.n}">
+      <div class="qh"><span class="qn">${it.n}.</span>
+      <span><span class="tag ${it.lvl}">${it.lvl}</span>${note}</span>
+      <span class="spacer"></span>${flagBtn('me',it.n)}</div>
       <div class="eqbox">${it.eqs.map(e=>esc(e)).join('<br>')}</div>
       <div class="vars">${inputs}</div>${solved}</div>`;
   });
@@ -553,8 +819,10 @@ function renderLs(){
         <strong>${it.ans}</strong> &mdash; <strong>${ok?'2/2':'0/2'} marks</strong>.
         The completed grid is shown.</div>`;
     }
-    h += `<div class="card"><div class="qh"><span class="qn">${it.n}.</span>
-      <span><span class="tag ${it.lvl}">${it.lvl}</span>${note}</span></div>
+    h += `<div class="card" id="q-ls-${it.n}" data-sec="ls" data-n="${it.n}">
+      <div class="qh"><span class="qn">${it.n}.</span>
+      <span><span class="tag ${it.lvl}">${it.lvl}</span>${note}</span>
+      <span class="spacer"></span>${flagBtn('ls',it.n)}</div>
       ${latinTable(it, rev)}<div class="letters">${btns}</div>${solved}</div>`;
   });
   return h;
@@ -584,7 +852,9 @@ function renderSub(){
         solved = `<div class="expl"><strong>${'abcd'[q.ans]})</strong> &mdash; ${q.expl}
           <br><strong>${ok?'2/2':'0/2'} marks</strong></div>`;
       }
-      h += `<div class="q"><div class="qh"><span class="qn">${q.n}.</span><div>${q.stem}</div></div>
+      h += `<div class="q" id="q-sub-${q.n}" data-sec="sub" data-n="${q.n}">
+        <div class="qh"><span class="qn">${q.n}.</span><div>${q.stem}</div>
+        <span class="spacer"></span>${flagBtn('sub',q.n)}</div>
         <div class="opts">${opts}</div>${solved}</div>`;
     });
     h += '</div>';
