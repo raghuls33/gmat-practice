@@ -219,6 +219,18 @@ kbd{display:inline-block;font-family:"SF Mono",Menlo,Consolas,monospace;font-siz
 .modecard strong{display:block;color:var(--crimson);font-size:15px;margin-bottom:4px}
 .modecard span{display:block;color:var(--muted);font-size:13px;line-height:1.5}
 @media(min-width:620px){.modepick{grid-template-columns:1fr 1fr}}
+
+/* ---------- review filters ---------- */
+.filterbar{display:flex;gap:7px;align-items:center;flex-wrap:wrap;margin:12px 0 0;font-size:13px}
+
+/* ---------- charts ---------- */
+.chartbox{margin:10px 0 4px}
+.chart{width:100%;height:auto;display:block;background:#fff;border:1px solid var(--line);border-radius:9px}
+.chartlegend{display:flex;gap:14px;flex-wrap:wrap;margin-top:8px;font-size:12.5px;color:var(--muted)}
+.chartlegend span{display:flex;align-items:center;gap:6px}
+.chartlegend i{width:13px;height:3px;border-radius:2px;display:inline-block}
+.copybox{width:100%;font-family:"SF Mono",Menlo,Consolas,monospace;font-size:12px;
+  border:1px solid var(--line);border-radius:7px;padding:9px;resize:vertical}
 </style>
 </head>
 <body>
@@ -542,6 +554,20 @@ function goHome(){
       }).join('')}
     </div>` : '';
 
+  const hist = getHistory();
+  const pool = weakPool();
+  const best = hist.length ? Math.max.apply(null, hist.map(a=>a.total)) : 0;
+  const histBanner = hist.length ? `
+    <div class="note">
+      <p><strong>${hist.length} attempt${hist.length>1?'s':''} recorded.</strong>
+      Best total so far: <strong>${best}/200</strong>.</p>
+      <div class="resrow">
+        <button class="btn sm pri" onclick="showHistory()">Attempt history &amp; trends</button>
+        <button class="btn sm" onclick="startDrill()" ${pool.count?'':'disabled'}>Drill my weak areas
+          ${pool.count?`(${pool.count})`:''}</button>
+      </div>
+    </div>` : '';
+
   const storageNote = Store.persistent() ? '' : `
     <div class="note warnbox"><p><strong>Storage unavailable.</strong> This browser is blocking
     local storage, so progress and history are kept in memory for this tab only and will be
@@ -562,6 +588,7 @@ function goHome(){
   </div>
   ${storageNote}
   ${resumeBanner}
+  ${histBanner}
   <h2>Choose a paper</h2>
   <div class="grid2">${cards}</div>
   <h2>Self-assessment bands</h2>
@@ -708,7 +735,8 @@ function startTimer(){
 }
 function paintTimer(){
   const el = document.getElementById('timer');
-  if(!S){el.classList.add('hide');return;}
+  if(!S || S.untimed){el.classList.add('hide');return;}   // a drill has no clock
+  el.classList.remove('hide');
   const t = S.left[S.tab];
   if(tabLocked(S.tab)){
     el.textContent = 'LOCKED';
@@ -725,10 +753,10 @@ function paintTimer(){
 /* ================= tabs ================= */
 function tabsHtml(){
   return SECT.map((s,i)=>{
-    const done = Object.keys(S.ans[s.k]).length;
+    const done = Object.keys(S.ans[s.k]).length, tot = secCount(i);
     const lk = tabLocked(i) ? ' <span class="lockmark" title="Locked: time ran out">&#128274;</span>' : '';
     return `<button class="tab ${i===S.tab?'on':''}${tabLocked(i)?' locked':''}" onclick="setTab(${i})">${s.name}
-      <span class="cnt">${done}/${s.n}</span>${lk}</button>`;
+      <span class="cnt">${done}/${tot}</span>${lk}</button>`;
   }).join('');
 }
 function setTab(i){ S.tab=i; S.cur=0; S.slot=0; saveProgress(true); render(); window.scrollTo(0,0); }
@@ -1024,9 +1052,9 @@ if (typeof document !== 'undefined') document.addEventListener('keydown', onKey)
 /* ================= rendering ================= */
 function paintTabs(){ document.getElementById('tabsIn').innerHTML = tabsHtml(); }
 function paintFoot(){
-  const s = SECT[S.tab], done = Object.keys(S.ans[s.k]).length;
-  document.getElementById('fstat').textContent = `${done}/${s.n} answered`;
-  document.getElementById('fprog').style.width = (done/s.n*100)+'%';
+  const s = SECT[S.tab], done = Object.keys(S.ans[s.k]).length, tot = secCount(S.tab);
+  document.getElementById('fstat').textContent = `${done}/${tot} answered`;
+  document.getElementById('fprog').style.width = (tot ? done/tot*100 : 0)+'%';
 }
 function render(keepScroll){
   const y = window.scrollY;
@@ -1050,7 +1078,7 @@ function head(title, sub, intro){
     You spent ${fmtSpent(S.spent[S.tab])} here.</p></div>` : '';
   return `<div style="margin-top:14px">
     <div class="bar">${title}</div><div class="bar2">${sub}</div></div>
-    ${locked}<div class="note">${intro}</div>`;
+    ${locked}${filterBar()}<div class="note">${intro}</div>`;
 }
 
 function renderFs(){
@@ -1064,7 +1092,10 @@ function renderFs(){
      <p>Figures may change colour, rotate about their own axis, move vertically, horizontally or
      diagonally, change step size by x + 1, bounce off a boundary or travel along it.
      Figures never disappear and never overlap. 1 mark per image.</p>`);
+  let shown = 0;
   S.p.fs.forEach(it=>{
+    if(!passFilter('fs', it.n)) return;
+    shown++;
     const a = S.ans.fs[it.n] || {};
     const note = it.note ? ` <span class="muted">&mdash; ${esc(it.note)}</span>` : '';
     let series = '';
@@ -1104,6 +1135,7 @@ function renderFs(){
       <div class="fscols">${col('a1',it.o1,it.a1)}${col('a2',it.o2,it.a2)}</div>
       ${solved}</div>`;
   });
+  if(!shown) h += emptyFilterNote();
   return h;
 }
 
@@ -1114,7 +1146,10 @@ function renderMe(){
     `<p>Solve each system so that <strong>all</strong> its equations hold at the same time.
      Every letter is an <strong>integer between 1 and 20</strong> and each system has exactly one
      solution. 2 marks only if every letter is correct &mdash; no partial credit.</p>`);
+  let shown = 0;
   S.p.me.forEach(it=>{
+    if(!passFilter('me', it.n)) return;
+    shown++;
     const a = S.ans.me[it.n] || {};
     const note = it.note ? ` <span class="muted">&mdash; ${esc(it.note)}</span>` : '';
     const inputs = it.vars.map(v=>{
@@ -1138,6 +1173,7 @@ function renderMe(){
       <div class="eqbox">${it.eqs.map(e=>esc(e)).join('<br>')}</div>
       <div class="vars">${inputs}</div>${solved}</div>`;
   });
+  if(!shown) h += emptyFilterNote();
   return h;
 }
 
@@ -1164,7 +1200,10 @@ function renderLs(){
      exactly <strong>once in each row and once in each column</strong>. Decide which letter belongs
      in the shaded cell marked <strong>?</strong>. Columns are labelled &alpha; &beta; &gamma;
      &delta; &epsilon;, rows 1&ndash;5.</p>`);
+  let shown = 0;
   S.p.ls.forEach(it=>{
+    if(!passFilter('ls', it.n)) return;
+    shown++;
     const a = S.ans.ls[it.n];
     const note = it.note ? ` <span class="muted">&mdash; ${esc(it.note)}</span>` : '';
     const btns = 'ABCDE'.split('').map(L=>{
@@ -1185,6 +1224,7 @@ function renderLs(){
       <span class="spacer"></span>${flagBtn('ls',it.n)}</div>
       ${latinTable(it, rev)}<div class="letters">${btns}</div>${solved}</div>`;
   });
+  if(!shown) h += emptyFilterNote();
   return h;
 }
 
@@ -1194,11 +1234,15 @@ function renderSub(){
     `<p>Each testlet begins with a short input text. Answer the single-choice questions that follow;
      each has 4 options and exactly one correct answer. The questions test
      <strong>subject knowledge and application</strong>, not memorised facts.</p>`);
+  let shown = 0;
   S.p.subject.forEach(t=>{
+    const vis = t.questions.filter(q=>passFilter('sub', q.n));
+    if(!vis.length) return;
+    shown += vis.length;
     h += `<div class="card"><h2 style="margin-top:0">${t.title}</h2>
       ${t.area?`<p class="muted" style="margin-top:-4px;font-size:13px"><em>${t.area}</em></p>`:''}
       ${t.stimulus}`;
-    t.questions.forEach(q=>{
+    vis.forEach(q=>{
       const a = S.ans.sub[q.n];
       const opts = q.options.map((o,i)=>{
         let cls='opt'+(a===i?' sel':'')+(ro?' dis':'');
@@ -1219,7 +1263,415 @@ function renderSub(){
     });
     h += '</div>';
   });
+  if(!shown) h += emptyFilterNote();
   return h;
+}
+
+
+/* ================= dynamic subtest sizes =================
+   A drill session is a synthetic paper whose subtests are whatever you got
+   wrong, so the fixed 20/20/20/40 counts in SECT no longer apply. */
+function secItems(k){
+  if (!S || !S.p) return [];
+  if (k === 'sub') return S.p.subject.reduce((a,t)=>a.concat(t.questions), []);
+  return S.p[k] || [];
+}
+function secCount(i){ return secItems(SECT[i].k).length; }
+function totalItems(){ return SECT.reduce((n,_,i)=>n+secCount(i), 0); }
+
+/* ================= review filters ================= */
+function isWrong(sec, n){
+  if (!S || !S.p) return false;
+  if (sec === 'fs') {
+    const it = S.p.fs.find(x=>x.n===n), a = S.ans.fs[n] || {};
+    return !!it && !(a.a1 === it.a1 && a.a2 === it.a2);
+  }
+  if (sec === 'me') {
+    const it = S.p.me.find(x=>x.n===n), a = S.ans.me[n] || {};
+    return !!it && !it.vars.every(v => String(a[v]) === String(it.sol[v]));
+  }
+  if (sec === 'ls') {
+    const it = S.p.ls.find(x=>x.n===n);
+    return !!it && S.ans.ls[n] !== it.ans;
+  }
+  const q = secItems('sub').find(x=>x.n===n);
+  return !!q && S.ans.sub[n] !== q.ans;
+}
+
+function passFilter(sec, n){
+  const f = S.filter || 'all';
+  if (!S.submitted || f === 'all') return true;
+  if (f === 'wrong')   return isWrong(sec, n);
+  if (f === 'flagged') return isFlagged(sec, n);
+  return true;
+}
+
+function setFilter(f){ S.filter = f; render(); window.scrollTo(0,0); }
+
+function filterBar(){
+  if (!S.submitted) return '';
+  const f = S.filter || 'all';
+  const b = (k, label) =>
+    `<button class="btn sm${f===k?' pri':''}" onclick="setFilter('${k}')">${label}</button>`;
+  return `<div class="filterbar"><span class="muted">Show:</span>
+    ${b('all','All')}${b('wrong','Wrong only')}${b('flagged','Flagged only')}</div>`;
+}
+
+function emptyFilterNote(){
+  const f = S.filter || 'all';
+  return `<div class="note"><p>Nothing in this subtest matches
+    <strong>${f === 'wrong' ? 'wrong only' : 'flagged only'}</strong>.</p></div>`;
+}
+
+/* ================= hand-rolled SVG charts ================= */
+function chartColors(){ return ['#A5195B', '#1656C8', '#1E8A3C', '#E8720C']; }
+
+/* cfg: {series:[{name,color,dash,pts:[num|null]}], xLabels:[], yMax, yUnit, h} */
+function lineChart(cfg){
+  const W = 640, H = cfg.h || 220;
+  const L = 44, R = 12, T = 14, B = 34;
+  const iw = W - L - R, ih = H - T - B;
+  const n = cfg.xLabels.length;
+  if (!n) return '<p class="muted">No attempts yet.</p>';
+  const xAt = i => n === 1 ? L + iw / 2 : L + (i * iw) / (n - 1);
+  const yAt = v => T + ih - (Math.max(0, Math.min(cfg.yMax, v)) / cfg.yMax) * ih;
+
+  let g = '';
+  const steps = 4;
+  for (let i = 0; i <= steps; i++) {
+    const v = (cfg.yMax / steps) * i, y = yAt(v);
+    g += `<line x1="${L}" y1="${y}" x2="${W-R}" y2="${y}" stroke="#e2e2e6" stroke-width="1"/>`;
+    g += `<text x="${L-7}" y="${y+4}" text-anchor="end" font-size="10.5" fill="#6b6b70">${Math.round(v)}${cfg.yUnit||''}</text>`;
+  }
+  cfg.xLabels.forEach((lb, i) => {
+    g += `<text x="${xAt(i)}" y="${H-13}" text-anchor="middle" font-size="10.5" fill="#6b6b70">${esc(lb)}</text>`;
+  });
+
+  let lines = '';
+  cfg.series.forEach(se => {
+    const pts = se.pts.map((v, i) => v === null || v === undefined ? null : [xAt(i), yAt(v)]);
+    const run = pts.filter(Boolean);
+    if (run.length > 1) {
+      lines += `<polyline points="${run.map(p=>p[0].toFixed(1)+','+p[1].toFixed(1)).join(' ')}"
+        fill="none" stroke="${se.color}" stroke-width="2" stroke-linejoin="round"
+        stroke-linecap="round"${se.dash?` stroke-dasharray="${se.dash}"`:''}/>`;
+    }
+    run.forEach(p => {
+      lines += `<circle cx="${p[0].toFixed(1)}" cy="${p[1].toFixed(1)}" r="3.4"
+        fill="#fff" stroke="${se.color}" stroke-width="2"/>`;
+    });
+  });
+
+  const desc = cfg.series.map(se => {
+    const vals = se.pts.filter(v => v !== null && v !== undefined);
+    return se.name + ': ' + (vals.length ? vals.join(', ') : 'no data');
+  }).join('. ');
+
+  const legend = cfg.series.length > 1
+    ? `<div class="chartlegend">${cfg.series.map(se=>
+        `<span><i style="background:${se.color}"></i>${esc(se.name)}</span>`).join('')}</div>`
+    : '';
+
+  return `<div class="chartbox">
+    <svg viewBox="0 0 ${W} ${H}" class="chart" role="img"
+      aria-label="${esc(cfg.title||'Chart')}. ${esc(desc)}">
+      <title>${esc(cfg.title||'Chart')}</title><desc>${esc(desc)}</desc>
+      ${g}
+      <line x1="${L}" y1="${T}" x2="${L}" y2="${T+ih}" stroke="#9a9aa0" stroke-width="1"/>
+      <line x1="${L}" y1="${T+ih}" x2="${W-R}" y2="${T+ih}" stroke="#9a9aa0" stroke-width="1"/>
+      ${lines}
+    </svg>${legend}</div>`;
+}
+
+/* ================= attempt history ================= */
+function attemptLabel(a){
+  const d = new Date(a.date);
+  const p = String(d.getDate()).padStart(2,'0') + '/' + String(d.getMonth()+1).padStart(2,'0');
+  return p;
+}
+
+function showHistory(){
+  clearInterval(tick); tick = null;
+  S = null;
+  document.getElementById('tabs').classList.add('hide');
+  document.getElementById('foot').classList.add('hide');
+  document.getElementById('timer').classList.add('hide');
+  document.getElementById('navpanel').classList.add('hide');
+
+  const hist = getHistory().slice().sort((a,b)=> new Date(a.date) - new Date(b.date));
+  const app = document.getElementById('app');
+
+  if (!hist.length) {
+    app.innerHTML = `<h1>Attempt history</h1>
+      <div class="note"><p>No submitted attempts yet. Finish a paper and it will appear here,
+      with a score trend and a drill built from what you got wrong.</p></div>
+      <button class="btn pri" onclick="goHome()">All papers</button>`;
+    window.scrollTo(0,0);
+    return;
+  }
+
+  const labels = hist.map(attemptLabel);
+  const C = chartColors();
+
+  const totalChart = lineChart({
+    title: 'Total score over time', yMax: 200, xLabels: labels,
+    series: [{name:'Total (of 200)', color:C[0], pts: hist.map(a=>a.total)}]
+  });
+
+  const trendChart = lineChart({
+    title: 'Per-subtest trend, percent of that subtest', yMax: 100, yUnit: '%',
+    xLabels: labels, h: 250,
+    series: [
+      {name:'Figure Sequences',      color:C[0], pts: hist.map(a=>Math.round(a.sect.fs/40*100))},
+      {name:'Mathematical Equations',color:C[1], dash:'6 3', pts: hist.map(a=>Math.round(a.sect.me/40*100))},
+      {name:'Latin Squares',         color:C[2], dash:'2 3', pts: hist.map(a=>Math.round(a.sect.ls/40*100))},
+      {name:'Subject Module',        color:C[3], dash:'9 3 2 3', pts: hist.map(a=>Math.round(a.sect.sub/80*100))}
+    ]
+  });
+
+  const rows = hist.slice().reverse().map(a => `<tr>
+      <td>${new Date(a.date).toLocaleDateString()} <span class="muted">${new Date(a.date).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'})}</span></td>
+      <td>Paper ${a.pid}</td>
+      <td>${a.mode === 'exam' ? 'Exam' : 'Practice'}</td>
+      <td><strong>${a.total}</strong>/200</td>
+      <td>${a.sect.fs}/${a.sect.me}/${a.sect.ls}</td>
+      <td>${a.sect.sub}/80</td>
+      <td>${fmtSpent((a.spent||[]).reduce((x,y)=>x+y,0))}</td>
+      <td><button class="btn sm" onclick="exportAttempt('${a.id}')">Copy</button></td>
+    </tr>`).join('');
+
+  const pool = weakPool();
+
+  document.getElementById('app').innerHTML = `<h1>Attempt history</h1>
+    <div class="card">
+      <h3 style="margin-top:0">Total score over time</h3>
+      ${totalChart}
+      <h3>Per-subtest trend</h3>
+      <p class="muted" style="font-size:12.5px;margin-top:-2px">Shown as a percentage of each
+      subtest so the 80-mark Subject Module is comparable with the 40-mark Core subtests.</p>
+      ${trendChart}
+    </div>
+
+    <div class="card">
+      <h3 style="margin-top:0">Drill my weak areas</h3>
+      <p class="muted" style="font-size:13.2px">Builds an ad-hoc set from every question you have
+      answered wrong across all five papers. Scored, but untimed.</p>
+      <p><strong>${pool.count}</strong> question${pool.count===1?'':'s'} in the pool
+        <span class="muted">(${pool.by.fs} figure sequences, ${pool.by.me} equation systems,
+        ${pool.by.ls} Latin squares, ${pool.by.sub} subject questions)</span></p>
+      <button class="btn pri" onclick="startDrill()" ${pool.count?'':'disabled'}>
+        ${pool.count ? 'Start drill' : 'Nothing to drill yet'}</button>
+    </div>
+
+    <div class="card">
+      <h3 style="margin-top:0">Attempts</h3>
+      <div style="overflow-x:auto">
+      <table><thead><tr><th>When</th><th>Paper</th><th>Mode</th><th>Total</th>
+        <th>Core fs/me/ls</th><th>Subject</th><th>Time</th><th></th></tr></thead>
+        <tbody>${rows}</tbody></table></div>
+    </div>
+
+    <div style="display:flex;gap:9px;flex-wrap:wrap">
+      <button class="btn" onclick="goHome()">All papers</button>
+      <button class="btn" onclick="clearAllData()">Clear all saved data</button>
+    </div>`;
+  window.scrollTo(0,0);
+}
+
+/* ================= export one attempt ================= */
+function attemptMarkdown(a){
+  const L = [];
+  const d = new Date(a.date);
+  L.push('# dMAT practice — Paper ' + a.pid);
+  L.push('');
+  L.push('- Date: ' + d.toLocaleString());
+  L.push('- Mode: ' + (a.mode === 'exam' ? 'Exam' : 'Practice'));
+  L.push('- **Total: ' + a.total + ' / 200** (' + Math.round(a.total / 2) + '%)');
+  L.push('- Core: ' + a.core + ' / 120 — Subject: ' + a.sect.sub + ' / 80');
+  L.push('');
+  L.push('## By subtest');
+  L.push('');
+  L.push('| Subtest | Score | Time spent |');
+  L.push('|---|---|---|');
+  const keys = ['fs', 'me', 'ls', 'sub'];
+  SECT.forEach((sec, i) => {
+    L.push('| ' + sec.name + ' | ' + a.sect[keys[i]] + ' / ' + sec.marks +
+           ' | ' + fmtSpent((a.spent || [])[i]) + ' |');
+  });
+  L.push('');
+  if (a.byLvl) {
+    L.push('## Core Module by difficulty');
+    L.push('');
+    L.push('| Difficulty | Score |');
+    L.push('|---|---|');
+    ['low', 'medium', 'high'].forEach(k => {
+      const v = a.byLvl[k] || [0, 0];
+      L.push('| ' + k.charAt(0).toUpperCase() + k.slice(1) + ' | ' + v[0] + ' / ' + v[1] + ' |');
+    });
+    L.push('');
+  }
+  if (a.byTestlet && a.byTestlet.length) {
+    L.push('## Subject Module by testlet');
+    L.push('');
+    L.push('| Testlet | Score |');
+    L.push('|---|---|');
+    a.byTestlet.forEach(t => L.push('| ' + String(t.name).replace(/\s*&mdash;\s*|\s*—\s*/, ' — ') +
+                                    ' | ' + t.got + ' / ' + t.tot + ' |'));
+    L.push('');
+  }
+  const nm = {fs: 'Figure Sequences', me: 'Mathematical Equations', ls: 'Latin Squares', sub: 'Subject Module'};
+  const group = which => {
+    const out = {};
+    (a[which] || []).forEach(w => { (out[w.sec] = out[w.sec] || []).push(w.n); });
+    return keys.filter(k => out[k] && out[k].length)
+               .map(k => '- ' + nm[k] + ': ' + out[k].sort((x, y) => x - y).join(', '));
+  };
+  const wrong = group('wrong'), flagged = group('flagged');
+  L.push('## Answered wrong');
+  L.push('');
+  L.push(wrong.length ? wrong.join('\n') : '- None — full marks.');
+  L.push('');
+  L.push('## Flagged for review');
+  L.push('');
+  L.push(flagged.length ? flagged.join('\n') : '- None flagged.');
+  L.push('');
+  return L.join('\n');
+}
+
+function copyText(text, label){
+  const done = () => alert((label || 'Summary') + ' copied to the clipboard.');
+  const manual = () => {
+    document.getElementById('dlgBox').innerHTML =
+      '<div class="mhead"><strong id="dlgTitle">Copy this summary</strong><span class="spacer"></span>' +
+      '<button class="btn sm" onclick="closeDlg()">Close</button></div>' +
+      '<div class="mbody"><p class="muted" style="margin-top:0">This browser would not let the page ' +
+      'write to the clipboard. Select all and copy.</p>' +
+      '<textarea class="copybox" readonly rows="16"></textarea></div>';
+    document.getElementById('dlgBox').querySelector('.copybox').value = text;
+    document.getElementById('dlg').classList.remove('hide');
+    const ta = document.getElementById('dlgBox').querySelector('.copybox');
+    ta.focus(); ta.select();
+  };
+  try {
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(text).then(done, manual);
+      return;
+    }
+  } catch (e) { /* fall through */ }
+  try {                                    // file:// often blocks the async API
+    const ta = document.createElement('textarea');
+    ta.value = text;
+    ta.setAttribute('readonly', '');
+    ta.style.position = 'fixed'; ta.style.top = '-1000px';
+    document.body.appendChild(ta);
+    ta.select();
+    const ok = document.execCommand && document.execCommand('copy');
+    document.body.removeChild(ta);
+    if (ok) { done(); return; }
+  } catch (e) { /* fall through */ }
+  manual();
+}
+
+function exportAttempt(id){
+  const a = getHistory().find(x => x.id === id);
+  if (!a) return;
+  copyText(attemptMarkdown(a), 'Attempt summary');
+}
+
+function exportCurrent(){
+  if (!S || !S.submitted || S.kind !== 'paper') return;
+  const r = score();
+  copyText(attemptMarkdown({
+    pid: S.pid, date: new Date().toISOString(), mode: S.mode,
+    total: r.total, core: r.core, sect: {fs:r.fs, me:r.me, ls:r.ls, sub:r.sub},
+    byLvl: r.byLvl, byTestlet: r.byTestlet, spent: S.spent, wrong: r.wrong, flagged: flagList()
+  }), 'Attempt summary');
+}
+
+/* ================= drill =================
+   A drill is a synthetic paper assembled from items you got wrong. Items are
+   shallow-cloned only to renumber them (originals collide across papers); the
+   clone shares every nested value with DATA and nothing is mutated. */
+function weakPool(){
+  const seen = Object.create(null);
+  const by = {fs: 0, me: 0, ls: 0, sub: 0};
+  const list = [];
+  getHistory().forEach(a => (a.wrong || []).forEach(w => {
+    const key = a.pid + ':' + w.sec + ':' + w.n;
+    if (seen[key]) return;
+    seen[key] = true;
+    list.push({pid: a.pid, sec: w.sec, n: w.n});
+    if (by[w.sec] !== undefined) by[w.sec]++;
+  }));
+  return {list: list, count: list.length, by: by};
+}
+
+function buildDrillPaper(){
+  const pool = weakPool();
+  const paper = {id: 'drill', fs: [], me: [], ls: [], subject: []};
+  const counters = {fs: 0, me: 0, ls: 0, sub: 0};
+  const testlets = Object.create(null);
+
+  pool.list.forEach(ref => {
+    const src = DATA.find(p => p.id === ref.pid);
+    if (!src) return;
+    if (ref.sec === 'sub') {
+      let found = null, tIdx = -1;
+      src.subject.forEach((t, i) => t.questions.forEach(q => {
+        if (q.n === ref.n) { found = q; tIdx = i; }
+      }));
+      if (!found) return;
+      const key = ref.pid + ':' + tIdx;
+      if (!testlets[key]) {
+        const t = src.subject[tIdx];
+        testlets[key] = {title: 'Paper ' + ref.pid + ' \u2014 ' + t.title,
+                         area: t.area, stimulus: t.stimulus, questions: []};
+        paper.subject.push(testlets[key]);
+      }
+      counters.sub++;
+      testlets[key].questions.push(Object.assign({}, found,
+        {n: counters.sub, _src: {pid: ref.pid, n: found.n}}));
+      return;
+    }
+    const it = (src[ref.sec] || []).find(x => x.n === ref.n);
+    if (!it) return;
+    counters[ref.sec]++;
+    paper[ref.sec].push(Object.assign({}, it, {
+      n: counters[ref.sec],
+      note: 'Paper ' + ref.pid + ', question ' + it.n + (it.note ? ' \u2014 ' + it.note : ''),
+      _src: {pid: ref.pid, n: it.n}
+    }));
+  });
+  return paper;
+}
+
+function startDrill(){
+  const paper = buildDrillPaper();
+  const total = paper.fs.length + paper.me.length + paper.ls.length +
+                paper.subject.reduce((a, t) => a + t.questions.length, 0);
+  if (!total) { alert('Nothing to drill yet — submit a paper first.'); return; }
+
+  S = {kind: 'drill', p: paper, pid: 'drill', mode: 'practice', untimed: true,
+       tab: 0, submitted: false, review: false, filter: 'all',
+       ans: {fs: {}, me: {}, ls: {}, sub: {}},
+       flags: {fs: {}, me: {}, ls: {}, sub: {}},
+       left: SECT.map(() => 0), spent: SECT.map(() => 0),
+       locked: SECT.map(() => false), cur: 0, slot: 0, started: Date.now()};
+
+  for (let i = 0; i < SECT.length; i++) { if (secCount(i)) { S.tab = i; break; } }
+
+  document.getElementById('tabs').classList.remove('hide');
+  document.getElementById('foot').classList.remove('hide');
+  document.getElementById('timer').classList.add('hide');     // untimed
+  const pri = document.getElementById('foot').querySelector('.btn.pri');
+  pri.textContent = 'Submit drill';
+  pri.onclick = finish;
+  render();
+  window.scrollTo(0, 0);
+}
+
+function srcNote(it){
+  return it && it._src ? ` <span class="muted">&mdash; Paper ${it._src.pid}, Q${it._src.n}</span>` : '';
 }
 
 /* ================= scoring ================= */
@@ -1287,8 +1739,9 @@ function recordAttempt(){
 
 function finish(force){
   const answered = SECT.reduce((n,s)=>n+Object.keys(S.ans[s.k]).length,0);
-  if(!force && !S.submitted && answered<100){
-    if(!confirm(`You have answered ${answered} of 100 questions. Submit anyway?\n\n`+
+  const total = totalItems();
+  if(!force && !S.submitted && answered<total){
+    if(!confirm(`You have answered ${answered} of ${total} questions. Submit anyway?\n\n`+
       `There is no negative marking, so unanswered questions are a pure loss.`)) return;
   }
   S.submitted = true;
@@ -1307,7 +1760,35 @@ function bar(label, got, tot){
     <span class="val">${got}/${tot}</span></div>`;
 }
 
+function showDrillResults(){
+  const r = score();
+  const max = totalItems() * 2;
+  const pct = max ? Math.round(r.total / max * 100) : 0;
+  document.getElementById('app').innerHTML = `<h1>Drill &mdash; Result</h1>
+  <div class="card">
+    <div class="score"><div class="big">${r.total}<span style="font-size:20px;color:var(--muted)">/${max}</span></div>
+      <div><div style="font-weight:700">${pct}% of your weak-area pool</div>
+      <div class="muted" style="font-size:13px">Untimed drill &middot; ${totalItems()} questions</div></div></div>
+    <h3>By subtest</h3><div class="bars">
+      ${SECT.map((sec,i)=>{
+        const key = ['fs','me','ls','sub'][i], tot = secCount(i)*2;
+        return tot ? bar(sec.name, r[key], tot) : '';
+      }).join('')}
+    </div>
+    <div class="note"><p>Questions you get right here stay in the pool until you get them right
+    in a full paper &mdash; the pool is built from submitted papers only.</p></div>
+    <div style="display:flex;gap:9px;flex-wrap:wrap;margin-top:14px">
+      <button class="btn pri" onclick="review()">Revise with solutions</button>
+      <button class="btn" onclick="startDrill()">Restart drill</button>
+      <button class="btn" onclick="showHistory()">Attempt history</button>
+      <button class="btn" onclick="goHome()">All papers</button>
+    </div>
+  </div>`;
+  window.scrollTo(0,0);
+}
+
 function showResults(){
+  if (S.kind === 'drill') { showDrillResults(); return; }
   const r = score();
   let band, bcol;
   if(r.total>=150){band='Competitive for selective programmes'; bcol='var(--ok)';}
@@ -1347,6 +1828,8 @@ function showResults(){
     Start your revision there.</p></div>
     <div style="display:flex;gap:9px;flex-wrap:wrap;margin-top:14px">
       <button class="btn pri" onclick="review()">Revise with solutions</button>
+      <button class="btn" onclick="exportCurrent()">Copy summary</button>
+      <button class="btn" onclick="showHistory()">Attempt history</button>
       <button class="btn" onclick="retake()">Retake this paper</button>
       <button class="btn" onclick="goHome()">All papers</button>
     </div>
@@ -1356,7 +1839,9 @@ function showResults(){
 }
 
 function review(){
+  S.filter = S.filter || 'all';
   S.tab = 0;
+  for (let i = 0; i < SECT.length; i++) { if (secCount(i)) { S.tab = i; break; } }
   document.getElementById('tabs').classList.remove('hide');
   document.getElementById('foot').classList.remove('hide');
   document.getElementById('foot').querySelector('.btn.pri').textContent = 'Back to result';

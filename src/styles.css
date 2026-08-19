@@ -212,3 +212,15 @@ kbd{display:inline-block;font-family:"SF Mono",Menlo,Consolas,monospace;font-siz
 .modecard strong{display:block;color:var(--crimson);font-size:15px;margin-bottom:4px}
 .modecard span{display:block;color:var(--muted);font-size:13px;line-height:1.5}
 @media(min-width:620px){.modepick{grid-template-columns:1fr 1fr}}
+
+/* ---------- review filters ---------- */
+.filterbar{display:flex;gap:7px;align-items:center;flex-wrap:wrap;margin:12px 0 0;font-size:13px}
+
+/* ---------- charts ---------- */
+.chartbox{margin:10px 0 4px}
+.chart{width:100%;height:auto;display:block;background:#fff;border:1px solid var(--line);border-radius:9px}
+.chartlegend{display:flex;gap:14px;flex-wrap:wrap;margin-top:8px;font-size:12.5px;color:var(--muted)}
+.chartlegend span{display:flex;align-items:center;gap:6px}
+.chartlegend i{width:13px;height:3px;border-radius:2px;display:inline-block}
+.copybox{width:100%;font-family:"SF Mono",Menlo,Consolas,monospace;font-size:12px;
+  border:1px solid var(--line);border-radius:7px;padding:9px;resize:vertical}
