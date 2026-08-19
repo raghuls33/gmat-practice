@@ -146,27 +146,130 @@ function clearAllData(){
   goHome();
 }
 
+
+/* ================= describing a matrix in words =================
+   Built from the same state objects the SVG is drawn from, so the screen-reader
+   text and the picture can never drift apart. */
+const GLYPH_NAME = {
+  '\u25c6': 'filled diamond',
+  '\u25a0': 'filled square',
+  '\u25cb': 'open circle',
+  '\u25b3': 'open triangle',
+  'A': 'arrow',
+  'K': 'right angle'
+};
+/* symSvg rotates the arrow by (ang - 90) and the angle by ang, with
+   ang = [0,90,180,270][o % 4]. */
+const ARROW_DIR = ['pointing up', 'pointing right', 'pointing down', 'pointing left'];
+const ANGLE_DIR = ['opening to the bottom right', 'opening to the bottom left',
+                   'opening to the top left', 'opening to the top right'];
+const COLOUR_NAME = {black:'black', red:'red', green:'green', blue:'blue',
+                     orange:'orange', magenta:'magenta', '':'black'};
+/* One-letter tag used by the colour-blind-safe mode. */
+const COLOUR_TAG = {black:'K', red:'R', green:'G', blue:'B', orange:'O', magenta:'M', '':'K'};
+
+function figureDesc(sym){
+  const name = GLYPH_NAME[sym.g] || 'figure';
+  let dir = '';
+  if (sym.g === 'A') dir = ' ' + ARROW_DIR[(sym.o || 0) % 4];
+  if (sym.g === 'K') dir = ' ' + ANGLE_DIR[(sym.o || 0) % 4];
+  return (COLOUR_NAME[sym.k] || 'black') + ' ' + name + dir +
+         ' at column ' + COLNAMES[sym.c] + ', row ' + (sym.r + 1);
+}
+
+function matDesc(state){
+  const st = state || [];
+  if (!st.length) return 'Empty 5 by 5 grid.';
+  return '5 by 5 grid, ' + st.length + ' figure' + (st.length === 1 ? '' : 's') + ': ' +
+         st.map(figureDesc).join('; ') + '.';
+}
+
+/* Strip markup so option text can be used as an accessible name. */
+function plain(html){
+  return String(html === undefined || html === null ? '' : html)
+    .replace(/<[^>]*>/g, ' ')
+    .replace(/&nbsp;/g, ' ').replace(/&amp;/g, '&').replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&#39;/g, "'")
+    .replace(/&mdash;/g, '\u2014').replace(/&middot;/g, '\u00b7')
+    .replace(/\s+/g, ' ').trim();
+}
+function attr(t){ return String(t === undefined || t === null ? '' : t).replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;'); }
+
+/* ================= colour-blind-safe tags ================= */
+function cbOn(){ return !!(SET && SET.cb); }
+
+function toggleCb(v){
+  SET.cb = (v === undefined) ? !cbOn() : !!v;
+  saveSettings();
+  if (S && S.p) render(true);
+  else if (document.querySelector('.pcard')) goHome();
+  document.querySelectorAll('.cbtoggle input').forEach(i => { i.checked = cbOn(); });
+}
+
+function cbToggleHtml(id){
+  return '<label class="cbtoggle"><input type="checkbox" ' + (cbOn() ? 'checked' : '') +
+    ' id="' + id + '" onchange="toggleCb(this.checked)"> ' +
+    '<span>Colour-blind safe tags</span></label>';
+}
+
+/* ================= radiogroup keyboard =================
+   Standard radio behaviour inside the group; stopPropagation keeps the global
+   j/k question navigation from also firing. */
+function radioKey(ev){
+  const k = ev.key;
+  if (['ArrowRight','ArrowDown','ArrowLeft','ArrowUp',' ','Spacebar','Enter'].indexOf(k) < 0) return;
+  const group = ev.currentTarget;
+  const radios = [].slice.call(group.querySelectorAll('[role="radio"]'))
+                   .filter(r => !r.disabled);
+  if (!radios.length) return;
+  let i = radios.indexOf(document.activeElement);
+  ev.stopPropagation();
+  ev.preventDefault();
+  if (k === ' ' || k === 'Spacebar' || k === 'Enter') {
+    if (i >= 0) radios[i].click();
+    return;
+  }
+  if (i < 0) i = 0;
+  else i = (k === 'ArrowRight' || k === 'ArrowDown')
+    ? (i + 1) % radios.length
+    : (i - 1 + radios.length) % radios.length;
+  radios[i].focus();
+  radios[i].click();
+}
+
 /* ================= SVG matrix rendering ================= */
+/* The one-letter colour tag drawn in the cell corner when colour-blind-safe
+   mode is on. Painted stroke-first so it stays readable over a filled figure. */
+function cbTag(s, cell){
+  if (!cbOn()) return '';
+  const t = COLOUR_TAG[s.k] || 'K';
+  const x = s.c*cell + cell*0.17, y = s.r*cell + cell*0.31;
+  return `<text x="${x.toFixed(2)}" y="${y.toFixed(2)}" font-size="${(cell*0.36).toFixed(2)}"
+    font-weight="700" text-anchor="middle" fill="${PAL[s.k] || '#1a1a1a'}"
+    stroke="#fff" stroke-width="${(cell*0.09).toFixed(2)}" paint-order="stroke"
+    font-family="Helvetica,Arial,sans-serif">${t}</text>`;
+}
+
 function symSvg(s, cell){
   const cx = s.c*cell + cell/2, cy = s.r*cell + cell/2, r = cell*0.30;
   const col = PAL[s.k] || '#1a1a1a';
   const A = `fill="${col}" stroke="${col}" stroke-width="1"`;
   const H = `fill="#fff" stroke="${col}" stroke-width="1.3"`;
-  if(s.g==='\u25c6') return `<polygon points="${cx},${cy-r} ${cx+r},${cy} ${cx},${cy+r} ${cx-r},${cy}" ${A}/>`;
-  if(s.g==='\u25a0') return `<rect x="${cx-r}" y="${cy-r}" width="${2*r}" height="${2*r}" ${A}/>`;
-  if(s.g==='\u25cb') return `<circle cx="${cx}" cy="${cy}" r="${r}" ${H}/>`;
-  if(s.g==='\u25b3') return `<polygon points="${cx},${cy-r*1.15} ${cx+r},${cy+r*0.75} ${cx-r},${cy+r*0.75}" ${H}/>`;
+  if(s.g==='\u25c6') return `<polygon points="${cx},${cy-r} ${cx+r},${cy} ${cx},${cy+r} ${cx-r},${cy}" ${A}/>` + cbTag(s, cell);
+  if(s.g==='\u25a0') return `<rect x="${cx-r}" y="${cy-r}" width="${2*r}" height="${2*r}" ${A}/>` + cbTag(s, cell);
+  if(s.g==='\u25cb') return `<circle cx="${cx}" cy="${cy}" r="${r}" ${H}/>` + cbTag(s, cell);
+  if(s.g==='\u25b3') return `<polygon points="${cx},${cy-r*1.15} ${cx+r},${cy+r*0.75} ${cx-r},${cy+r*0.75}" ${H}/>` + cbTag(s, cell);
   if(s.g==='A'){
     const ang=[0,90,180,270][s.o%4], a=r*1.15, b=r*0.42;
     const pts=[[a,0],[a-r*0.9,b*1.55],[a-r*0.9,b*0.55],[-a,b*0.55],[-a,-b*0.55],
                [a-r*0.9,-b*0.55],[a-r*0.9,-b*1.55]].map(p=>p.join(',')).join(' ');
-    return `<g transform="translate(${cx},${cy}) rotate(${ang-90})"><polygon points="${pts}" ${A}/></g>`;
+    return `<g transform="translate(${cx},${cy}) rotate(${ang-90})"><polygon points="${pts}" ${A}/></g>` + cbTag(s, cell);
   }
   if(s.g==='K'){
     const ang=[0,90,180,270][s.o%4];
     return `<g transform="translate(${cx},${cy}) rotate(${ang})">`+
       `<polyline points="${-r},${r} ${-r},${-r} ${r},${-r}" fill="none" stroke="${col}" `+
-      `stroke-width="1.9" stroke-linecap="square"/></g>`;
+      `stroke-width="1.9" stroke-linecap="square"/></g>` + cbTag(s, cell);
   }
   return '';
 }
@@ -179,11 +282,14 @@ function matSvg(state, cell){
     g += `<line x1="${i*cell}" y1="0" x2="${i*cell}" y2="${W}" stroke="#6a6a6a" stroke-width=".7"/>`;
   }
   const sy = (state||[]).map(s=>symSvg(s,cell)).join('');
-  return `<svg width="${W}" height="${W}" viewBox="0 0 ${W} ${W}">${g}${sy}</svg>`;
+  const d = matDesc(state);
+  return `<svg class="mx" width="${W}" height="${W}" viewBox="0 0 ${W} ${W}"
+    role="img" aria-label="${attr(d)}"><title>${esc(d)}</title>${g}${sy}</svg>`;
 }
 function qBox(cell){
   cell = cell || 15; const W = cell*5;
-  return `<svg width="${W}" height="${W}" viewBox="0 0 ${W} ${W}">`+
+  return `<svg class="mx" width="${W}" height="${W}" viewBox="0 0 ${W} ${W}" role="img"`+
+    ` aria-label="Unknown matrix, to be worked out"><title>Unknown matrix, to be worked out</title>`+
     `<rect x=".5" y=".5" width="${W-1}" height="${W-1}" fill="#fff" stroke="#6a6a6a" stroke-width="1"/>`+
     `<text x="${W/2}" y="${W/2+W*0.17}" text-anchor="middle" font-size="${W*0.5}" `+
     `font-weight="700" fill="#8a8a8a">?</text></svg>`;
@@ -321,6 +427,15 @@ function goHome(){
   uploaded anywhere.</p>
   <div style="display:flex;gap:9px;flex-wrap:wrap">
     <button class="btn" onclick="clearAllData()">Clear all saved data</button>
+  </div>
+  <h2>Display</h2>
+  <div class="card" style="margin-top:8px">
+    ${cbToggleHtml('cbHome')}
+    <p class="muted" style="font-size:12.8px;margin:8px 0 0">Adds a one-letter tag
+    (<strong>K</strong> black, <strong>R</strong> red, <strong>G</strong> green,
+    <strong>B</strong> blue, <strong>O</strong> orange) to every coloured figure, so the
+    figure sequences can be read without relying on hue. The tags also appear in the
+    printed paper.</p>
   </div>`;
   window.scrollTo(0,0);
 }
@@ -574,6 +689,8 @@ function toggleNav(){
 function paintChips(){
   const box = document.getElementById('chips');
   if (!box || !S || !S.p) return;
+  const cbSlot = document.getElementById('npCb');
+  if (cbSlot) cbSlot.innerHTML = cbToggleHtml('cbNav');
   const sec = curSec(), nums = qNums();
   const t = document.getElementById('npTitle');
   if (t) t.textContent = SECT[S.tab].name;
@@ -660,7 +777,13 @@ function typingInField(){
   const a = document.activeElement;
   if (!a) return false;
   const tag = (a.tagName || '').toLowerCase();
-  return tag === 'input' || tag === 'textarea' || tag === 'select' || a.isContentEditable === true;
+  if (tag === 'textarea' || tag === 'select') return true;
+  if (a.isContentEditable === true) return true;
+  if (tag !== 'input') return false;
+  /* A checkbox is not a typing target, so shortcuts stay live next to the
+     colour-blind toggle; number and text boxes swallow everything. */
+  const t = (a.type || 'text').toLowerCase();
+  return ['checkbox', 'radio', 'button', 'submit', 'reset'].indexOf(t) < 0;
 }
 
 function optionCount(){
@@ -821,6 +944,8 @@ function renderFs(){
     series += `<div class="mcell"><div class="cap">Image 1</div>${qBox(15)}</div>`;
     series += `<div class="mcell"><div class="cap">Image 2</div>${qBox(15)}</div>`;
     function col(which, opts, correct){
+      const label = which==='a1' ? 'Image 1 (Matrix 5)' : 'Image 2 (Matrix 6)';
+      const gid = `fsg-${it.n}-${which}`;
       const inner = opts.map((o,k)=>{
         const n = k+1;
         let cls = 'fsopt' + (a[which]===n ? ' sel' : '') + (ro ? ' dis' : '');
@@ -829,11 +954,17 @@ function renderFs(){
           else if(a[which]===n) cls = 'fsopt wrong';
           else cls = 'fsopt';
         }
-        return `<div class="${cls}" onclick="pickFs(${it.n},'${which}',${n})">
-          <div class="cap">Matrix ${n}</div>${matSvg(o,15)}</div>`;
+        const chosen = a[which]===n;
+        const tab = chosen || (a[which]===undefined && n===1) ? 0 : -1;
+        const al = `${label}, candidate ${n} of 3. ${matDesc(o)}`;
+        return `<div class="${cls}" role="radio" tabindex="${tab}"
+          aria-checked="${chosen?'true':'false'}" aria-label="${attr(al)}"
+          onclick="pickFs(${it.n},'${which}',${n})">
+          <div class="cap" aria-hidden="true">Matrix ${n}</div>${matSvg(o,15)}</div>`;
       }).join('');
-      return `<div class="fscol" data-slot="${which}"><h4>${which==='a1'?'Image 1 (Matrix 5)':'Image 2 (Matrix 6)'}</h4>
-        <div class="fsstack">${inner}</div></div>`;
+      return `<div class="fscol" data-slot="${which}"><h4 id="${gid}">${label}</h4>
+        <div class="fsstack" role="radiogroup" aria-labelledby="${gid}"
+          onkeydown="radioKey(event)">${inner}</div></div>`;
     }
     let solved = '';
     if(rev){
@@ -894,7 +1025,9 @@ function renderMe(){
 }
 
 function latinTable(it, reveal){
-  let h = '<table class="ltab"><tr><td class="hdr"></td>';
+  const cap = 'Latin square ' + it.n + '. The shaded cell is column ' +
+              COLNAMES[it.t[1]] + ', row ' + (it.t[0]+1) + '.';
+  let h = '<table class="ltab"><caption class="sr-only">' + esc(cap) + '</caption><tr><td class="hdr"></td>';
   COLNAMES.forEach(c=>h+=`<td class="hdr">${c}</td>`); h+='</tr>';
   for(let r=0;r<5;r++){
     h += `<tr><td class="rowh">${r+1}</td>`;
@@ -922,10 +1055,15 @@ function renderLs(){
     shown++;
     const a = S.ans.ls[it.n];
     const note = it.note ? ` <span class="muted">&mdash; ${esc(it.note)}</span>` : '';
-    const btns = 'ABCDE'.split('').map(L=>{
+    const btns = 'ABCDE'.split('').map((L,li)=>{
       let cls='lbtn'+(a===L?' sel':'');
       if(rev){ cls='lbtn'+(L===it.ans?' correct':(a===L?' wrong':'')); }
-      return `<button class="${cls}" ${ro?'disabled':''} onclick="pick('ls',${it.n},'${L}')">${L}</button>`;
+      const chosen = a===L;
+      const tab = chosen || (a===undefined && li===0) ? 0 : -1;
+      return `<button class="${cls}" type="button" role="radio" tabindex="${tab}"
+        aria-checked="${chosen?'true':'false'}"
+        aria-label="Letter ${L} for question ${it.n}"
+        ${ro?'disabled':''} onclick="pick('ls',${it.n},'${L}')">${L}</button>`;
     }).join('');
     let solved='';
     if(rev){
@@ -938,7 +1076,9 @@ function renderLs(){
       <div class="qh"><span class="qn">${it.n}.</span>
       <span><span class="tag ${it.lvl}">${it.lvl}</span>${note}</span>
       <span class="spacer"></span>${flagBtn('ls',it.n)}</div>
-      ${latinTable(it, rev)}<div class="letters">${btns}</div>${solved}</div>`;
+      ${latinTable(it, rev)}
+      <div class="letters" role="radiogroup" onkeydown="radioKey(event)"
+        aria-label="Answer for question ${it.n}: which letter belongs in the shaded cell">${btns}</div>${solved}</div>`;
   });
   if(!shown) h += emptyFilterNote();
   return h;
@@ -963,8 +1103,13 @@ function renderSub(){
       const opts = q.options.map((o,i)=>{
         let cls='opt'+(a===i?' sel':'')+(ro?' dis':'');
         if(rev){ cls='opt dis'+(i===q.ans?' correct':(a===i?' wrong':'')); }
-        return `<div class="${cls}" onclick="pick('sub',${q.n},${i})">
-          <span class="k">${'abcd'[i]})</span><span>${o}</span></div>`;
+        const chosen = a===i;
+        const tab = chosen || (a===undefined && i===0) ? 0 : -1;
+        return `<div class="${cls}" role="radio" tabindex="${tab}"
+          aria-checked="${chosen?'true':'false'}"
+          aria-label="${attr('Option ' + 'abcd'[i] + ': ' + plain(o))}"
+          onclick="pick('sub',${q.n},${i})">
+          <span class="k" aria-hidden="true">${'abcd'[i]})</span><span>${o}</span></div>`;
       }).join('');
       let solved='';
       if(rev){
@@ -975,7 +1120,8 @@ function renderSub(){
       h += `<div class="q" id="q-sub-${q.n}" data-sec="sub" data-n="${q.n}">
         <div class="qh"><span class="qn">${q.n}.</span><div>${q.stem}</div>
         <span class="spacer"></span>${flagBtn('sub',q.n)}</div>
-        <div class="opts">${opts}</div>${solved}</div>`;
+        <div class="opts" role="radiogroup" onkeydown="radioKey(event)"
+          aria-label="${attr('Answer options for question ' + q.n)}">${opts}</div>${solved}</div>`;
     });
     h += '</div>';
   });
