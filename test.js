@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /*
- * dMAT Practice Suite — test suite.
+ * GMAT Practice Suite — test suite.
  *
  * Plain node, no dependencies, no test framework. It builds a minimal DOM shim,
  * evaluates src/app.js inside it, and drives the real scoring and rendering code
@@ -593,13 +593,13 @@ check('src/data.json is valid JSON and parses to 5 papers', () => {
 });
 
 check('the built file embeds src/data.json byte for byte', () => {
-  const built = path.join(ROOT, 'dist', 'dMAT_Practice_Suite.html');
+  const built = path.join(ROOT, 'dist', 'GMAT_Practice_Suite.html');
   if (!fs.existsSync(built)) {
     // build.sh has not run yet; nothing to compare against.
     return;
   }
   const html = fs.readFileSync(built, 'utf8');
-  const open = '<script id="dmat-data" type="application/json">';
+  const open = '<script id="gmat-data" type="application/json">';
   const i = html.indexOf(open);
   assert(i >= 0, 'built file has no data block');
   const j = html.indexOf('</script>', i);

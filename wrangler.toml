@@ -3,7 +3,7 @@
 # build step, so the project stays dependency-free and toolchain-free.
 #
 #   npx wrangler login
-#   npx wrangler pages project create dmat-practice --production-branch main
+#   npx wrangler pages project create gmat-practice --production-branch main
 #   npx wrangler pages deploy
-name = "dmat-practice"
+name = "gmat-practice"
 pages_build_output_dir = "dist"

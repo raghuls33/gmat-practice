@@ -1,8 +1,8 @@
 {
-  "name": "dmat-practice",
+  "name": "gmat-practice",
   "version": "1.0.0",
   "private": true,
-  "description": "Offline practice-exam app for the dMAT Data Science subject module. Unofficial.",
+  "description": "Offline practice-exam app for the GMAT Data Science subject module. Unofficial.",
   "license": "MIT",
   "scripts": {
     "test": "node test.js",

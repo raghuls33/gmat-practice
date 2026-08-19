@@ -1,4 +1,4 @@
-/* dMAT Practice Suite — application code.
+/* GMAT Practice Suite — application code.
    DATA is treated as read-only input and is never mutated. */
 let DATA = [];
 
@@ -20,6 +20,9 @@ let tick = null;
    mode, quota exhausted) flips the module to an in-memory map for the rest of
    the session. Nothing is ever logged, nothing ever throws out of here. */
 const Store = (function(){
+  // Namespace deliberately keeps the original 'dmat.v1.' prefix. The app was
+  // renamed, but changing this key would orphan every attempt already saved in
+  // a user's browser. It is internal and never shown in the UI.
   const NS = 'dmat.v1.';
   let live = false, mem = Object.create(null);
   try {
@@ -137,7 +140,7 @@ function pushHistory(rec){
 }
 
 function clearAllData(){
-  if (!confirm('Delete all saved dMAT data in this browser?\n\n' +
+  if (!confirm('Delete all saved GMAT data in this browser?\n\n' +
                'This removes every in-progress paper and your whole attempt ' +
                'history. It cannot be undone.')) return;
   Store.keys().forEach(k => Store.del(k));
@@ -395,9 +398,12 @@ function goHome(){
     local storage, so progress and history are kept in memory for this tab only and will be
     lost on reload. Everything else works normally.</p></div>`;
   document.getElementById('app').innerHTML = `
-  <h1>dMAT Practice Suite &mdash; Data Science</h1>
-  <p class="muted" style="margin-top:0">Five full-length papers built to the structure of the official
-  g.a.s.t. / TestDaF-Institut preparatory materials. Answer, submit, score, then revise with worked solutions.</p>
+  <h1>GMAT Practice Suite &mdash; Data Science</h1>
+  <p class="muted" style="margin-top:0">Five full-length papers &mdash; figure sequences, equation systems,
+  Latin squares and a Data Science subject module. Answer, submit, score, then revise with worked solutions.</p>
+  <p class="muted" style="margin-top:6px;font-size:12.5px"><strong>Format note:</strong> the task types follow the
+  official g.a.s.t. / TestDaF-Institut preparatory materials. They are not the question formats used by the
+  real GMAT.</p>
   <div class="note">
    <p><strong>Each paper:</strong> Core Module (Figure Sequences 20, Mathematical Equations 20,
    Latin Squares 20 &mdash; 2 marks each, 25 min per subtest) + Subject Module Data Science
@@ -420,8 +426,8 @@ function goHome(){
   <tr><td>Solid</td><td>72&ndash;89</td><td>48&ndash;59</td><td>120&ndash;149</td></tr>
   <tr><td>Needs more preparation</td><td>&lt;72</td><td>&lt;48</td><td>&lt;120</td></tr>
   </tbody></table>
-  <p class="muted" style="font-size:12.5px">The real dMAT reports standardised scores rather than a
-  pass mark; these bands are a practice target only.</p>
+  <p class="muted" style="font-size:12.5px">The 200-mark scheme above follows the g.a.s.t. / TestDaF-Institut
+  format rather than any scaled score reported by the real GMAT; these bands are a practice target only.</p>
   <h2>Saved data</h2>
   <p class="muted" style="font-size:13px">Everything is stored locally in this browser. Nothing is
   uploaded anywhere.</p>
@@ -1344,7 +1350,7 @@ function showHistory(){
 function attemptMarkdown(a){
   const L = [];
   const d = new Date(a.date);
-  L.push('# dMAT practice — Paper ' + a.pid);
+  L.push('# GMAT practice — Paper ' + a.pid);
   L.push('');
   L.push('- Date: ' + d.toLocaleString());
   L.push('- Mode: ' + (a.mode === 'exam' ? 'Exam' : 'Practice'));
@@ -1728,7 +1734,7 @@ if (typeof window !== 'undefined') {
 function boot(data){ DATA = data; goHome(); }
 
 if (typeof document !== 'undefined') {
-  const el = document.getElementById('dmat-data');
+  const el = document.getElementById('gmat-data');
   let inline = null;
   try { inline = el ? JSON.parse(el.textContent) : null; } catch(e){ inline = null; }
   if (Array.isArray(inline) && inline.length) {
@@ -1738,7 +1744,7 @@ if (typeof document !== 'undefined') {
     fetch('data.json').then(r=>r.json()).then(boot).catch(()=>{
       document.getElementById('app').innerHTML =
         '<div class="note"><p>Could not load <code>data.json</code>. '+
-        'Run <code>sh build.sh</code> and open <code>dist/dMAT_Practice_Suite.html</code>.</p></div>';
+        'Run <code>sh build.sh</code> and open <code>dist/GMAT_Practice_Suite.html</code>.</p></div>';
     });
   }
 }

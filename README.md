@@ -1,18 +1,21 @@
-# dMAT Practice Suite — Data Science
+# GMAT Practice Suite — Data Science
 
-Five full-length practice papers for the **dMAT** (Digital Master Assessment Test)
-**Data Science subject module**, as a single self-contained HTML file that runs
+Five full-length practice papers as a single self-contained HTML file that runs
 offline with no server, no build step and no dependencies.
 
-Open `dist/dMAT_Practice_Suite.html` in a browser and start.
+Open `dist/GMAT_Practice_Suite.html` in a browser and start.
 
-> **Unofficial.** This is independent practice material, modelled on the structure
-> of the [g.a.s.t.](https://www.gast.de/) / TestDaF-Institut preparatory materials
-> for the dMAT Data Science subject module. It is not produced, endorsed or
-> reviewed by g.a.s.t., the TestDaF-Institut, or any university. The real dMAT
-> reports standardised scores rather than a pass mark; the bands shown in the app
-> are a practice target only. Papers 1 and 2 rebuild the eighteen official worked
-> examples at Q1 / Q8 / Q15 of each Core subtest; everything else is original.
+> **Unofficial, and not GMAT-format.** This is independent practice material whose
+> task types (figure sequences, equation systems, Latin squares, plus a Data Science
+> subject module) are modelled on the structure of the
+> [g.a.s.t.](https://www.gast.de/) / TestDaF-Institut preparatory materials for the
+> dMAT (Digital Master Assessment Test) Data Science subject module — **not** on the
+> question formats used by the real GMAT, which has no such sections. It is not
+> produced, endorsed or reviewed by GMAC, g.a.s.t., the TestDaF-Institut, or any
+> university. The 200-mark scheme is the g.a.s.t. format, not a GMAT scaled score;
+> the bands shown in the app are a practice target only. Papers 1 and 2 rebuild the
+> eighteen official worked examples at Q1 / Q8 / Q15 of each Core subtest; everything
+> else is original.
 
 ---
 
@@ -131,7 +134,7 @@ Requires only a POSIX shell. No npm install, no bundler, no toolchain.
 sh build.sh
 ```
 
-This writes `dist/dMAT_Practice_Suite.html` — a single self-contained file with
+This writes `dist/GMAT_Practice_Suite.html` — a single self-contained file with
 the CSS, the question data and the application inlined, and **zero external
 references**. It also writes `dist/index.html` with the same content, which is
 what a static host serves.
@@ -139,7 +142,7 @@ what a static host serves.
 Open the result directly from the filesystem:
 
 ```bash
-open dist/dMAT_Practice_Suite.html
+open dist/GMAT_Practice_Suite.html
 ```
 
 To work on `src/` without rebuilding, serve the folder over HTTP — opening

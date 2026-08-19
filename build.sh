@@ -1,6 +1,6 @@
 #!/bin/sh
 # Inline src/{styles.css,data.json,app.js} into a single self-contained
-# dist/dMAT_Practice_Suite.html. POSIX sh, no dependencies, no toolchain.
+# dist/GMAT_Practice_Suite.html. POSIX sh, no dependencies, no toolchain.
 #
 # It scans src/index.html for the marker comments __CSS__, __DATA__ and __JS__
 # and replaces those whole lines with the file contents. Nothing is escaped or
@@ -10,7 +10,7 @@ set -e
 cd "$(dirname "$0")"
 SRC=src
 OUT=dist
-FILE=$OUT/dMAT_Practice_Suite.html
+FILE=$OUT/GMAT_Practice_Suite.html
 
 for f in "$SRC/index.html" "$SRC/styles.css" "$SRC/app.js" "$SRC/data.json"; do
   [ -f "$f" ] || { echo "build: missing $f" >&2; exit 1; }
@@ -27,7 +27,7 @@ while IFS= read -r line || [ -n "$line" ]; do
       printf '</style>\n'   >> "$FILE.tmp"
       ;;
     *__DATA__*)
-      printf '<script id="dmat-data" type="application/json">' >> "$FILE.tmp"
+      printf '<script id="gmat-data" type="application/json">' >> "$FILE.tmp"
       cat "$SRC/data.json"   >> "$FILE.tmp"
       printf '</script>\n'  >> "$FILE.tmp"
       ;;
