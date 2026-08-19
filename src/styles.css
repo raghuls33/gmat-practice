@@ -252,3 +252,39 @@ kbd{display:inline-block;font-family:"SF Mono",Menlo,Consolas,monospace;font-siz
 .fsrow,.fscols{max-width:100%}
 .ltab{max-width:100%}
 @media(max-width:400px){ .ltab td{width:22px;height:22px;font-size:12.5px} }
+
+/* ---------- print ----------
+   Print the paper, not the app: the chrome, the clock, the navigator and
+   anything you can click on disappear, and no question is split across a
+   page boundary. */
+@media print{
+  @page{margin:14mm 12mm}
+  header,.tabs,.footbar,.navpanel,.modal,.flagbtn,.filterbar,#timer,
+  .btn,button,.legend,.cbtoggle{display:none !important}
+  body{background:#fff;color:#000;font-size:11pt}
+  .wrap{max-width:none;padding:0}
+  .card{border:1px solid #999;border-radius:0;padding:10px 12px;margin:0 0 10px;
+    break-inside:avoid;page-break-inside:avoid}
+  .q{break-inside:avoid;page-break-inside:avoid;border-top:1px solid #bbb}
+  .q.cur{background:none;box-shadow:none}
+  .card.cur{box-shadow:none;border-color:#999}
+  .bar{background:#fff;color:#000;border:1px solid #000;border-radius:0;
+    break-after:avoid;page-break-after:avoid}
+  .bar2{background:#fff;color:#000;border:1px solid #000;border-top:0;
+    break-after:avoid;page-break-after:avoid}
+  h1,h2,h3{color:#000;break-after:avoid;page-break-after:avoid}
+  .note,.expl{background:#fff;border-left:2px solid #000;border-radius:0;
+    break-inside:avoid;page-break-inside:avoid}
+  .opt,.fsopt,.lbtn{border-color:#666;background:#fff !important;box-shadow:none !important}
+  .opt.sel,.fsopt.sel{box-shadow:none;outline:1.5px solid #000;background:#fff !important}
+  .opt.sel .k::after{content:" \2713"}
+  .tag{border:1px solid #666;background:#fff;color:#000}
+  .eqbox{background:#fff;border:1px solid #999}
+  .fscols{break-inside:avoid;page-break-inside:avoid}
+  .mx{width:62px;height:62px}
+  table,.ltab{break-inside:avoid;page-break-inside:avoid}
+  th{background:#fff;border-color:#666}
+  td{border-color:#666}
+  a{color:#000;text-decoration:none}
+  .chart{border-color:#666}
+}

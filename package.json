@@ -1,0 +1,11 @@
+{
+  "name": "dmat-practice",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Offline practice-exam app for the dMAT Data Science subject module. Unofficial.",
+  "license": "MIT",
+  "scripts": {
+    "test": "node test.js",
+    "build": "sh build.sh"
+  }
+}
