@@ -270,6 +270,27 @@ kbd{display:inline-block;font-family:"SF Mono",Menlo,Consolas,monospace;font-siz
 .contact{margin:11px 0 13px;font-size:13.5px}
 .contact a{word-break:break-all}
 
+/* Sign-up form inside the About block. */
+.signup{margin-top:15px;padding-top:14px;border-top:1px solid var(--line)}
+.signupH{margin:0 0 2px;font-size:15px;color:var(--crimson)}
+.signup .fld{display:block;font-size:13px;font-weight:600;margin:11px 0 4px}
+.signup input[type=text],.signup input[type=email],.signup textarea{
+  width:100%;max-width:420px;font:inherit;font-size:13.5px;padding:7px 9px;
+  border:1px solid var(--line);border-radius:6px;background:var(--card);color:inherit}
+.signup textarea{resize:vertical;min-height:46px}
+.signup .err{display:block;color:var(--bad);font-size:12.2px;margin-top:3px}
+.signup .consent{display:flex;gap:8px;align-items:flex-start;margin-top:13px;
+  font-size:12.8px;max-width:460px;font-weight:400}
+.signup .consent input{margin-top:2px;flex:none}
+.suRow{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-top:12px}
+.sustatus{font-size:12.8px;color:var(--muted)}
+.sustatus.good{color:var(--ok);font-weight:600}
+.sustatus.bad{color:var(--bad);font-weight:600}
+/* Honeypot is positioned off-screen rather than display:none — some bots skip
+   fields they can tell are not rendered. Hidden from assistive tech by the
+   aria-hidden on the wrapper and tabindex=-1 on the input. */
+.hpot{position:absolute;left:-9999px;width:1px;height:1px;overflow:hidden}
+
 @media print{
   @page{margin:14mm 12mm}
   header,.tabs,.footbar,.navpanel,.modal,.flagbtn,.filterbar,#timer,
@@ -287,6 +308,7 @@ kbd{display:inline-block;font-family:"SF Mono",Menlo,Consolas,monospace;font-siz
     break-after:avoid;page-break-after:avoid}
   h1,h2,h3{color:#000;break-after:avoid;page-break-after:avoid}
   .about{display:none !important}
+  .signup{display:none !important}
   .note,.expl{background:#fff;border-left:2px solid #000;border-radius:0;
     break-inside:avoid;page-break-inside:avoid}
   .opt,.fsopt,.lbtn{border-color:#666;background:#fff !important;box-shadow:none !important}
@@ -785,8 +807,10 @@ function goHome(){
   <p class="muted" style="font-size:12.5px">The 200-mark scheme above follows the g.a.s.t. / TestDaF-Institut
   format rather than any scaled score reported by the real GMAT; these bands are a practice target only.</p>
   <h2>Saved data</h2>
-  <p class="muted" style="font-size:13px">Everything is stored locally in this browser. Nothing is
-  uploaded anywhere.</p>
+  <p class="muted" style="font-size:13px">Your answers, flags, timings and attempt history are stored
+  only in this browser and are never uploaded. The one exception is the optional sign-up form under
+  <em>About this material</em>, which sends the details you type there to the server &mdash; nothing else
+  on this page leaves your device.</p>
   <div style="display:flex;gap:9px;flex-wrap:wrap">
     <button class="btn" onclick="clearAllData()">Clear all saved data</button>
   </div>
@@ -807,12 +831,52 @@ function goHome(){
     follow, or a Latin square that does not solve uniquely? Corrections are welcome &mdash; please quote
     the paper number and the question number.</p>
     <p id="contact" class="contact"><span class="muted" style="font-size:12.8px">Loading contact&hellip;</span></p>
+    <div id="signupWrap" class="signup hide">
+      <h3 class="signupH">Keep in touch</h3>
+      <p class="muted" style="font-size:12.8px;margin-top:2px">To be told when papers or corrections are
+      added, leave your details. This is the only part of the site that sends anything to a server.</p>
+      <form id="signupForm" novalidate>
+        <label class="fld" for="suName"><span>Name</span></label>
+        <input id="suName" type="text" maxlength="80" autocomplete="name" aria-describedby="suNameErr">
+        <span class="err" id="suNameErr" role="alert"></span>
+
+        <label class="fld" for="suEmail"><span>Email</span></label>
+        <input id="suEmail" type="email" maxlength="254" autocomplete="email" aria-describedby="suEmailErr">
+        <span class="err" id="suEmailErr" role="alert"></span>
+
+        <label class="fld" for="suNote"><span>Message <span class="muted">(optional)</span></span></label>
+        <textarea id="suNote" maxlength="500" rows="2" aria-describedby="suNoteErr"></textarea>
+        <span class="err" id="suNoteErr" role="alert"></span>
+
+        <div class="hpot" aria-hidden="true">
+          <label for="suWebsite">Website</label>
+          <input id="suWebsite" type="text" tabindex="-1" autocomplete="off">
+        </div>
+
+        <label class="consent">
+          <input id="suConsent" type="checkbox" aria-describedby="suConsentErr">
+          <span>I agree to my name and email being stored so I can be contacted about this
+          practice material.</span>
+        </label>
+        <span class="err" id="suConsentErr" role="alert"></span>
+
+        <div class="suRow">
+          <button class="btn pri" type="submit" id="suBtn">Send</button>
+          <span id="suStatus" class="sustatus" role="status"></span>
+        </div>
+      </form>
+      <p class="muted" style="font-size:12px;margin-bottom:0"><strong>What is stored:</strong> your name,
+      your email, any message, the country the request came from, and the time. <strong>Not stored:</strong>
+      your IP address or your browser details. Nothing is shared with anyone else. To have your entry
+      removed, email the address above and it will be deleted.</p>
+    </div>
     <p class="muted" style="font-size:12px;margin-bottom:0"><strong>Unofficial.</strong> Independent practice
     material. The task types follow the g.a.s.t. / TestDaF-Institut preparatory materials for the dMAT, not
     the question formats used by the real GMAT. Not produced, endorsed or reviewed by GMAC, g.a.s.t., the
     TestDaF-Institut, or any university.</p>
   </div>`;
   paintContact();
+  initSignup();
   window.scrollTo(0,0);
 }
 
@@ -2136,6 +2200,94 @@ if (typeof document !== 'undefined') {
         '<div class="note"><p>Could not load <code>data.json</code>. '+
         'Run <code>sh build.sh</code> and open <code>dist/GMAT_Practice_Suite.html</code>.</p></div>';
     });
+  }
+}
+
+/*
+ * Sign-up form.
+ *
+ * The same built file is served three ways: from the Cloudflare Worker, from
+ * GitHub Pages, and straight off the filesystem. Only the first has an API, so
+ * the form asks before it shows itself and simply stays hidden elsewhere —
+ * that keeps the offline single-file build honest rather than showing a
+ * control that cannot work.
+ */
+const SIGNUP_FIELDS = ['name', 'email', 'note', 'consent'];
+
+function suEl(id) { return document.getElementById(id); }
+
+function clearSignupErrors() {
+  SIGNUP_FIELDS.forEach(f => {
+    const el = suEl('su' + f.charAt(0).toUpperCase() + f.slice(1) + 'Err');
+    if (el) el.textContent = '';
+  });
+}
+
+function showSignupErrors(errors) {
+  Object.keys(errors || {}).forEach(f => {
+    const el = suEl('su' + f.charAt(0).toUpperCase() + f.slice(1) + 'Err');
+    if (el) el.textContent = errors[f];
+  });
+  const first = Object.keys(errors || {})[0];
+  const input = first && suEl('su' + first.charAt(0).toUpperCase() + first.slice(1));
+  if (input && input.focus) input.focus();
+}
+
+async function initSignup() {
+  const wrap = suEl('signupWrap');
+  if (!wrap || typeof fetch !== 'function') return;
+  try {
+    const res = await fetch('/api/signup', { method: 'GET' });
+    if (!res.ok) return;
+    const body = await res.json();
+    if (!body || body.ready !== true) return;
+    wrap.classList.remove('hide');
+    suEl('signupForm').addEventListener('submit', submitSignup);
+  } catch (err) {
+    /* No API on this host. Leaving the form hidden is the whole point. */
+  }
+}
+
+async function submitSignup(ev) {
+  ev.preventDefault();
+  const btn = suEl('suBtn');
+  const status = suEl('suStatus');
+  clearSignupErrors();
+  status.textContent = '';
+  status.className = 'sustatus';
+  btn.disabled = true;
+
+  const payload = {
+    name: suEl('suName').value,
+    email: suEl('suEmail').value,
+    note: suEl('suNote').value,
+    website: suEl('suWebsite').value,
+    consent: suEl('suConsent').checked
+  };
+
+  try {
+    const res = await fetch('/api/signup', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+    const body = await res.json().catch(() => ({}));
+    if (res.ok && body.ok) {
+      suEl('signupForm').reset();
+      status.textContent = 'Thank you — your details were saved.';
+      status.className = 'sustatus good';
+    } else if (res.status === 422 && body.errors) {
+      showSignupErrors(body.errors);
+      status.textContent = '';
+    } else {
+      status.textContent = body.error || 'That did not go through. Please try again later.';
+      status.className = 'sustatus bad';
+    }
+  } catch (err) {
+    status.textContent = 'Could not reach the server. Please try again later.';
+    status.className = 'sustatus bad';
+  } finally {
+    btn.disabled = false;
   }
 }
 </script>

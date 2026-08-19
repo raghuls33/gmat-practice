@@ -263,6 +263,27 @@ kbd{display:inline-block;font-family:"SF Mono",Menlo,Consolas,monospace;font-siz
 .contact{margin:11px 0 13px;font-size:13.5px}
 .contact a{word-break:break-all}
 
+/* Sign-up form inside the About block. */
+.signup{margin-top:15px;padding-top:14px;border-top:1px solid var(--line)}
+.signupH{margin:0 0 2px;font-size:15px;color:var(--crimson)}
+.signup .fld{display:block;font-size:13px;font-weight:600;margin:11px 0 4px}
+.signup input[type=text],.signup input[type=email],.signup textarea{
+  width:100%;max-width:420px;font:inherit;font-size:13.5px;padding:7px 9px;
+  border:1px solid var(--line);border-radius:6px;background:var(--card);color:inherit}
+.signup textarea{resize:vertical;min-height:46px}
+.signup .err{display:block;color:var(--bad);font-size:12.2px;margin-top:3px}
+.signup .consent{display:flex;gap:8px;align-items:flex-start;margin-top:13px;
+  font-size:12.8px;max-width:460px;font-weight:400}
+.signup .consent input{margin-top:2px;flex:none}
+.suRow{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-top:12px}
+.sustatus{font-size:12.8px;color:var(--muted)}
+.sustatus.good{color:var(--ok);font-weight:600}
+.sustatus.bad{color:var(--bad);font-weight:600}
+/* Honeypot is positioned off-screen rather than display:none — some bots skip
+   fields they can tell are not rendered. Hidden from assistive tech by the
+   aria-hidden on the wrapper and tabindex=-1 on the input. */
+.hpot{position:absolute;left:-9999px;width:1px;height:1px;overflow:hidden}
+
 @media print{
   @page{margin:14mm 12mm}
   header,.tabs,.footbar,.navpanel,.modal,.flagbtn,.filterbar,#timer,
@@ -280,6 +301,7 @@ kbd{display:inline-block;font-family:"SF Mono",Menlo,Consolas,monospace;font-siz
     break-after:avoid;page-break-after:avoid}
   h1,h2,h3{color:#000;break-after:avoid;page-break-after:avoid}
   .about{display:none !important}
+  .signup{display:none !important}
   .note,.expl{background:#fff;border-left:2px solid #000;border-radius:0;
     break-inside:avoid;page-break-inside:avoid}
   .opt,.fsopt,.lbtn{border-color:#666;background:#fff !important;box-shadow:none !important}

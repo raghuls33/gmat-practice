@@ -609,6 +609,101 @@ check('the built file embeds src/data.json byte for byte', () => {
     'the built file must not reference anything external');
 });
 
+/* --------------------------------------------------------- signup validation */
+/*
+ * worker/validate.js is an ES module because the Worker imports it, and this
+ * file is CommonJS. Rather than add a build step or a dependency, evaluate it
+ * the same way src/app.js is evaluated above — strip the export keyword and run
+ * it in a vm context. The code under test is byte-for-byte what ships.
+ */
+const V = (function () {
+  const src = fs.readFileSync(path.join(ROOT, 'worker', 'validate.js'), 'utf8')
+    .replace(/^export /gm, '');
+  const ctx = {};
+  vm.createContext(ctx);
+  /* Function declarations become properties of the context, but const and let
+     stay lexical and do not — so hand the constants over explicitly. */
+  vm.runInContext(src + ';globalThis.LIMITS = LIMITS;', ctx);
+  return ctx;
+})();
+
+check('a complete signup is accepted', () => {
+  const r = V.validateSignup({ name: 'Ada Lovelace', email: 'ada@example.com', consent: true });
+  assert(r.ok, 'should be valid: ' + JSON.stringify(r.errors));
+});
+
+check('name and email are both required', () => {
+  const r = V.validateSignup({ consent: true });
+  assert(!r.ok, 'empty signup must fail');
+  assert(r.errors.name, 'missing name error');
+  assert(r.errors.email, 'missing email error');
+});
+
+check('consent is required — silence is not agreement', () => {
+  const r = V.validateSignup({ name: 'Ada', email: 'ada@example.com' });
+  assert(!r.ok, 'must fail without consent');
+  assert(r.errors.consent, 'missing consent error');
+});
+
+check('consent must be true, not merely truthy', () => {
+  ['yes', 1, 'on', {}].forEach(v => {
+    const r = V.validateSignup({ name: 'Ada', email: 'ada@example.com', consent: v });
+    assert(!r.ok, 'consent ' + JSON.stringify(v) + ' must not count as agreement');
+  });
+});
+
+check('obviously malformed addresses are rejected', () => {
+  ['nope', 'a@b', 'a b@c.co', '@example.com', 'ada@', 'ada example.com'].forEach(e => {
+    const r = V.validateSignup({ name: 'Ada', email: e, consent: true });
+    assert(!r.ok, 'should reject ' + JSON.stringify(e));
+  });
+});
+
+check('email is trimmed and lower-cased, name has runs of space collapsed', () => {
+  const r = V.validateSignup({ name: '  Ada   Lovelace ', email: '  ADA@Example.COM ', consent: true });
+  assert(r.ok, 'should be valid');
+  eq(r.value.email, 'ada@example.com', 'email not normalised');
+  eq(r.value.name, 'Ada Lovelace', 'name not normalised');
+});
+
+check('over-long fields are rejected at the stated limits', () => {
+  const long = n => 'x'.repeat(n);
+  assert(!V.validateSignup({ name: long(V.LIMITS.name + 1), email: 'a@b.co', consent: true }).ok,
+    'name limit not enforced');
+  assert(V.validateSignup({ name: long(V.LIMITS.name), email: 'a@b.co', consent: true }).ok,
+    'name limit is off by one');
+  assert(!V.validateSignup({ name: 'Ada', email: 'a@b.co', consent: true, note: long(V.LIMITS.note + 1) }).ok,
+    'note limit not enforced');
+});
+
+check('control characters in a name are rejected', () => {
+  const r = V.validateSignup({ name: 'Ada\u0007Lovelace', email: 'a@b.co', consent: true });
+  assert(!r.ok, 'control characters must not be accepted');
+});
+
+check('validateSignup survives junk input without throwing', () => {
+  [null, undefined, 'string', 42, []].forEach(v => {
+    const r = V.validateSignup(v);
+    assert(r && r.ok === false, 'should return a failed result for ' + JSON.stringify(v));
+  });
+});
+
+check('the honeypot trips only when filled in', () => {
+  assert(V.isHoneypotTripped({ website: 'http://spam.example' }), 'filled honeypot must trip');
+  assert(!V.isHoneypotTripped({ website: '' }), 'empty honeypot must not trip');
+  assert(!V.isHoneypotTripped({}), 'absent honeypot must not trip');
+  assert(!V.isHoneypotTripped(null), 'null input must not trip');
+});
+
+check('the built file hides the signup form until an API says otherwise', () => {
+  const built = path.join(ROOT, 'dist', 'index.html');
+  if (!fs.existsSync(built)) return;
+  const html = fs.readFileSync(built, 'utf8');
+  assert(/id="signupWrap" class="signup hide"/.test(html),
+    'the form must ship hidden, so file:// and GitHub Pages never show a control that cannot work');
+  assert(html.indexOf('/api/signup') > -1, 'the readiness probe is missing from the build');
+});
+
 /* ------------------------------------------------------------------ report */
 const total = passed + failures.length;
 if (failures.length) {

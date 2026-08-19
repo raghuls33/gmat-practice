@@ -118,7 +118,16 @@ src/data.json     the question bank: 5 papers (read-only input)
 build.sh          inlines the four src files into one HTML file
 test.js           the test suite
 dist/             build output — the deliverable
+
+worker/index.js   Cloudflare Worker: the /api routes, else static assets
+worker/validate.js  signup validation, shared by the Worker and the tests
+schema.sql        D1 table for the signup list
+wrangler.toml     Worker + assets config
 ```
+
+The Worker is only involved on Cloudflare. `dist/` is a complete, standalone
+site on its own — that is what GitHub Pages serves and what opens from
+`file://`.
 
 `src/data.json` is treated as **read-only input**. `build.sh` copies it through
 byte for byte, and the test suite asserts that the JSON embedded in the built
@@ -173,6 +182,93 @@ rendering code. It asserts, among other things, that every paper totals exactly
 that every subject question has exactly four options with an answer index in
 0..3, that each figure-sequence item's three options are distinct, and that every
 Latin square's stated answer matches its completed grid.
+
+---
+
+---
+
+## Sign-ups and privacy
+
+The practice app itself never sends anything anywhere. Answers, flags, timings
+and attempt history live in `localStorage` and stay in the browser.
+
+There is one exception, and it is opt-in: an **optional sign-up form** in the
+*About this material* card, for people who want to be told when papers or
+corrections are added.
+
+### Where it does and does not appear
+
+The same built file is served three ways, and only one of them has a backend:
+
+| Served from | API | Form |
+|---|---|---|
+| Cloudflare Worker | yes | shown |
+| GitHub Pages | no | hidden |
+| `file://` | no | hidden |
+
+The form asks `GET /api/signup` on load and renders itself only if the reply is
+`{"ready":true}`. Anywhere else it stays hidden, so the offline single-file
+build never shows a control that cannot work.
+
+### What is recorded
+
+Name, email address, the optional message, the country the request came from,
+and the time. **Not** the IP address and **not** the browser user-agent. A
+consent checkbox is required — `consent` must be exactly `true`, and the server
+re-validates it, so an altered form cannot bypass it. Nothing is shared with
+anyone. Deletion on request: email the address in the About card.
+
+If you run this yourself with sign-ups enabled and have visitors in the EU, you
+are the data controller for that list. This repository gives you the mechanism
+and an honest notice; it does not give you a lawful basis, a retention policy or
+a records obligation. That part is yours.
+
+### Turning sign-ups on
+
+Without these steps the Worker still deploys and serves the app perfectly well —
+`/api/signup` simply reports itself as not ready and the form stays hidden.
+
+```bash
+npx wrangler login
+```
+
+```bash
+npx wrangler d1 create gmat-practice-signups
+```
+
+Paste the `database_id` it prints into `wrangler.toml` and uncomment the
+`[[d1_databases]]` block, then create the table:
+
+```bash
+npx wrangler d1 execute gmat-practice-signups --remote --file=./schema.sql
+```
+
+Set a long random admin token — without it the read endpoint stays shut:
+
+```bash
+npx wrangler secret put ADMIN_TOKEN
+```
+
+### Reading the list
+
+`GET /api/signups` requires the token in an `Authorization` header. It is never
+in the URL: query strings end up in logs, browser history and referrer headers,
+and this response contains other people's email addresses.
+
+```bash
+curl -H "Authorization: Bearer YOUR_TOKEN" https://YOUR-WORKER-URL/api/signups
+```
+
+Add `?format=csv` for a spreadsheet-friendly download. With no `ADMIN_TOKEN`
+configured the endpoint returns 503 rather than defaulting to open.
+
+### Anti-spam
+
+A public POST endpoint attracts bots. There is a honeypot field, hidden
+off-screen and skipped by the keyboard, and a filled-in honeypot gets the same
+cheerful reply a human gets while being discarded — telling a bot it failed only
+teaches it to try harder. Bodies over 4 KB are rejected. That is a floor, not a
+wall: if it starts attracting real volume, put Cloudflare Turnstile in front.
 
 ---
 

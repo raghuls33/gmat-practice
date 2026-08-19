@@ -1,18 +1,34 @@
-# Cloudflare Workers static-assets config.
+# Cloudflare Workers config.
 #
 # dist/ is committed and pre-built, so the only build step is build.sh, which
 # needs nothing but a POSIX shell — no npm install, no bundler, no toolchain.
-#
-# There is deliberately no `main`: this Worker serves static assets only, so no
-# Worker script runs. There is also no `pages_build_output_dir` — that key marks
-# a project as Pages, which makes `wrangler deploy` refuse with
-# "you have run `wrangler deploy` on a Pages project".
 #
 # Workers Builds settings that match this file:
 #   Build command   npm run build
 #   Deploy command  npx wrangler deploy
 name = "gmat-practice"
+main = "worker/index.js"
 compatibility_date = "2026-08-19"
 
+# Static assets. `binding` is required because worker/index.js falls through to
+# env.ASSETS.fetch() for everything that is not an /api/ route.
 [assets]
 directory = "./dist"
+binding = "ASSETS"
+
+# ---------------------------------------------------------------------------
+# Signup storage. Commented out on purpose: a placeholder database_id fails the
+# deploy, and until this is filled in the Worker still deploys and serves the
+# app — /api/signup just reports itself as not ready and the form stays hidden.
+#
+# To turn signups on:
+#   1. npx wrangler login
+#   2. npx wrangler d1 create gmat-practice-signups
+#   3. paste the database_id below and uncomment the three lines
+#   4. npx wrangler d1 execute gmat-practice-signups --remote --file=./schema.sql
+#   5. npx wrangler secret put ADMIN_TOKEN      (a long random string)
+#
+# [[d1_databases]]
+# binding = "DB"
+# database_name = "gmat-practice-signups"
+# database_id = "PASTE_THE_ID_FROM_STEP_2_HERE"
