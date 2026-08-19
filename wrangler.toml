@@ -1,0 +1,9 @@
+# Cloudflare Pages project config.
+# Deploy is a direct upload of the pre-built dist/ folder — Cloudflare runs no
+# build step, so the project stays dependency-free and toolchain-free.
+#
+#   npx wrangler login
+#   npx wrangler pages project create dmat-practice --production-branch main
+#   npx wrangler pages deploy
+name = "dmat-practice"
+pages_build_output_dir = "dist"
