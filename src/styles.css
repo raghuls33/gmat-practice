@@ -134,3 +134,10 @@ th{background:#f7f0f4;font-weight:600}
   .brow .lbl{width:120px} .wrap{padding:0 12px 96px} .card{padding:14px}
   .hd{padding:9px 12px}
 }
+
+/* ---------- persistence / resume ---------- */
+.tag.warn{background:#fdf0e0;color:#b35c00}
+.note.resume{background:#fff8ec;border-left-color:var(--warn)}
+.note.warnbox{background:#fdecec;border-left-color:var(--bad)}
+.resrow{display:flex;align-items:center;gap:9px;flex-wrap:wrap;margin:7px 0 0}
+.resrow .spacer{flex:1;min-width:0}

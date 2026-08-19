@@ -15,6 +15,137 @@ const PAL = {black:'#1a1a1a', red:'#D0021B', green:'#1E8A3C', blue:'#1656C8',
 let S = null;          // active session
 let tick = null;
 
+/* ================= safe storage =================
+   Every localStorage call is wrapped. The first failure (disabled, private
+   mode, quota exhausted) flips the module to an in-memory map for the rest of
+   the session. Nothing is ever logged, nothing ever throws out of here. */
+const Store = (function(){
+  const NS = 'dmat.v1.';
+  let live = false, mem = Object.create(null);
+  try {
+    const probe = NS + '__probe';
+    window.localStorage.setItem(probe, '1');
+    window.localStorage.removeItem(probe);
+    live = true;
+  } catch (e) { live = false; }
+
+  function demote(){ live = false; }
+
+  function getRaw(k){
+    if (live) { try { return window.localStorage.getItem(NS + k); } catch (e) { demote(); } }
+    return k in mem ? mem[k] : null;
+  }
+  function setRaw(k, v){
+    mem[k] = v;                       // memory always mirrors, so a later
+    if (live) {                       // quota failure never loses the value
+      try { window.localStorage.setItem(NS + k, v); return true; }
+      catch (e) { demote(); }
+    }
+    return false;
+  }
+  function delRaw(k){
+    delete mem[k];
+    if (live) { try { window.localStorage.removeItem(NS + k); } catch (e) { demote(); } }
+  }
+  function allKeys(){
+    const out = [];
+    if (live) {
+      try {
+        for (let i = 0; i < window.localStorage.length; i++) {
+          const k = window.localStorage.key(i);
+          if (k && k.indexOf(NS) === 0) out.push(k.slice(NS.length));
+        }
+      } catch (e) { demote(); }
+    }
+    for (const k in mem) if (out.indexOf(k) < 0) out.push(k);
+    return out;
+  }
+
+  return {
+    get(k, fallback){
+      const raw = getRaw(k);
+      if (raw === null || raw === undefined) return fallback;
+      try { return JSON.parse(raw); } catch (e) { delRaw(k); return fallback; }
+    },
+    set(k, val){
+      try { return setRaw(k, JSON.stringify(val)); }
+      catch (e) { return false; }     // circular / unserialisable: give up quietly
+    },
+    del: delRaw,
+    keys: allKeys,
+    persistent(){ return live; }
+  };
+})();
+
+const K_HISTORY  = 'history';
+const K_SETTINGS = 'settings';
+const kProgress  = pid => 'progress.' + pid;
+
+let SET = Store.get(K_SETTINGS, {cb:false});
+function saveSettings(){ Store.set(K_SETTINGS, SET); }
+
+/* ================= progress persistence ================= */
+let saveTimer = null;
+
+function snapshot(){
+  return {
+    v: 1, pid: S.pid, tab: S.tab, mode: S.mode,
+    ans: S.ans, flags: S.flags,
+    left: S.left, spent: S.spent, locked: S.locked,
+    started: S.started, saved: Date.now()
+  };
+}
+
+function writeProgress(){
+  saveTimer = null;
+  if (!S || S.kind !== 'paper' || S.submitted) return;
+  Store.set(kProgress(S.pid), snapshot());
+}
+
+/* Debounced: typing four digits into an equation writes once, not four times. */
+function saveProgress(immediate){
+  if (!S || S.kind !== 'paper' || S.submitted) return;
+  if (saveTimer) { clearTimeout(saveTimer); saveTimer = null; }
+  if (immediate) writeProgress();
+  else saveTimer = setTimeout(writeProgress, 400);
+}
+
+function clearProgress(pid){ Store.del(kProgress(pid)); }
+
+function listProgress(){
+  const out = [];
+  DATA.forEach(p => {
+    const s = Store.get(kProgress(p.id), null);
+    if (s && s.ans) out.push(s);
+  });
+  return out;
+}
+
+function countAnswered(ans){
+  return SECT.reduce((n, sec) => n + Object.keys(ans[sec.k] || {}).length, 0);
+}
+
+function getHistory(){
+  const h = Store.get(K_HISTORY, []);
+  return Array.isArray(h) ? h : [];
+}
+function pushHistory(rec){
+  const h = getHistory();
+  h.push(rec);
+  while (h.length > 200) h.shift();          // keep the store bounded
+  Store.set(K_HISTORY, h);
+}
+
+function clearAllData(){
+  if (!confirm('Delete all saved dMAT data in this browser?\n\n' +
+               'This removes every in-progress paper and your whole attempt ' +
+               'history. It cannot be undone.')) return;
+  Store.keys().forEach(k => Store.del(k));
+  SET = {cb:false};
+  alert('Saved data cleared.');
+  goHome();
+}
+
 /* ================= SVG matrix rendering ================= */
 function symSvg(s, cell){
   const cx = s.c*cell + cell/2, cy = s.r*cell + cell/2, r = cell*0.30;
@@ -59,13 +190,47 @@ function qBox(cell){
 }
 
 /* ================= session ================= */
-function newSession(pid){
+function newSession(pid, mode){
   const p = DATA.find(x=>x.id===pid);
-  return {p:p, tab:0, submitted:false, review:false,
+  return {kind:'paper', p:p, pid:pid, mode:(mode==='exam'?'exam':'practice'),
+          tab:0, submitted:false, review:false,
           ans:{fs:{}, me:{}, ls:{}, sub:{}},
-          left:SECT.map(s=>s.mins*60), started:Date.now()};
+          flags:{fs:{}, me:{}, ls:{}, sub:{}},
+          left:SECT.map(s=>s.mins*60),
+          spent:SECT.map(()=>0),
+          locked:SECT.map(()=>false),
+          started:Date.now()};
+}
+
+/* Rebuild a live session from a stored snapshot. Anything missing or of the
+   wrong shape falls back to the fresh-session default, so an old or truncated
+   record can never wedge the app. */
+function sessionFrom(snap){
+  const p = DATA.find(x=>x.id===snap.pid);
+  if (!p) return null;
+  const S2 = newSession(snap.pid, snap.mode);
+  const nums = (a, def) => (Array.isArray(a) && a.length === SECT.length) ? a.slice() : def;
+  SECT.forEach(sec => {
+    if (snap.ans   && snap.ans[sec.k]   && typeof snap.ans[sec.k]   === 'object') S2.ans[sec.k]   = snap.ans[sec.k];
+    if (snap.flags && snap.flags[sec.k] && typeof snap.flags[sec.k] === 'object') S2.flags[sec.k] = snap.flags[sec.k];
+  });
+  S2.left   = nums(snap.left,   S2.left);
+  S2.spent  = nums(snap.spent,  S2.spent);
+  S2.locked = nums(snap.locked, S2.locked);
+  S2.tab     = (snap.tab >= 0 && snap.tab < SECT.length) ? snap.tab : 0;
+  S2.started = snap.started || Date.now();
+  return S2;
 }
 function esc(t){return (t||'').replace(/&/g,'&amp;').replace(/</g,'&lt;');}
+
+function relTime(ts){
+  if(!ts) return 'recently';
+  const d = Math.max(0, Math.round((Date.now()-ts)/1000));
+  if(d < 60) return 'just now';
+  if(d < 3600) return Math.round(d/60) + ' min ago';
+  if(d < 86400) return Math.round(d/3600) + ' h ago';
+  return Math.round(d/86400) + ' d ago';
+}
 
 /* ================= home ================= */
 function goHome(){
@@ -73,13 +238,41 @@ function goHome(){
   document.getElementById('tabs').classList.add('hide');
   document.getElementById('foot').classList.add('hide');
   document.getElementById('timer').classList.add('hide');
+  const saved = {};
+  listProgress().forEach(sn => { saved[sn.pid] = sn; });
+
   const cards = DATA.map(p=>{
     const off = p.id<=2 ? '<span class="tag off">contains official samples</span>' : '';
-    return `<div class="pcard" onclick="startPaper(${p.id})">
+    const sn = saved[p.id];
+    const badge = sn ? `<span class="tag warn">in progress</span>` : '';
+    const st = sn
+      ? `${countAnswered(sn.ans)}/100 answered &middot; ${sn.mode==='exam'?'exam':'practice'} mode`
+      : '100 questions &middot; 200 marks &middot; 180 min';
+    return `<div class="pcard" onclick="openPaper(${p.id})">
       <h3>Paper ${p.id}</h3>
-      <div class="st">100 questions &middot; 200 marks &middot; 180 min</div>
-      <div style="margin-top:9px">${off}</div></div>`;
+      <div class="st">${st}</div>
+      <div style="margin-top:9px">${badge}${off}</div></div>`;
   }).join('');
+
+  const resumeBanner = Object.keys(saved).length ? `
+    <div class="note resume">
+      <p><strong>Unfinished attempt${Object.keys(saved).length>1?'s':''} found.</strong></p>
+      ${Object.keys(saved).map(pid=>{
+        const sn = saved[pid];
+        return `<div class="resrow">
+          <span>Paper ${pid} &mdash; ${countAnswered(sn.ans)}/100 answered,
+            saved ${relTime(sn.saved)}</span>
+          <span class="spacer"></span>
+          <button class="btn sm pri" onclick="resumePaper(${pid})">Resume paper ${pid}</button>
+          <button class="btn sm" onclick="restartPaper(${pid})">Start over</button>
+        </div>`;
+      }).join('')}
+    </div>` : '';
+
+  const storageNote = Store.persistent() ? '' : `
+    <div class="note warnbox"><p><strong>Storage unavailable.</strong> This browser is blocking
+    local storage, so progress and history are kept in memory for this tab only and will be
+    lost on reload. Everything else works normally.</p></div>`;
   document.getElementById('app').innerHTML = `
   <h1>dMAT Practice Suite &mdash; Data Science</h1>
   <p class="muted" style="margin-top:0">Five full-length papers built to the structure of the official
@@ -90,9 +283,12 @@ function goHome(){
    (40 questions, 2 marks each, 90 min). Total <strong>200 marks</strong>.</p>
    <p><strong>Exam rules:</strong> no notes, no calculator, no negative marking &mdash; always guess.
    Papers 1 and 2 embed the eighteen official worked examples at Q1 / Q8 / Q15 of every Core subtest.</p>
-   <p><strong>Note:</strong> progress lives in this browser tab only. Reloading clears it, so finish a
-   paper in one sitting.</p>
+   <p><strong>Note:</strong> your answers, flags and remaining time are saved in this browser as
+   you go, so a reload or a closed tab will not lose a paper. Submitted attempts are kept as
+   history for tracking and drilling.</p>
   </div>
+  ${storageNote}
+  ${resumeBanner}
   <h2>Choose a paper</h2>
   <div class="grid2">${cards}</div>
   <h2>Self-assessment bands</h2>
@@ -103,17 +299,52 @@ function goHome(){
   <tr><td>Needs more preparation</td><td>&lt;72</td><td>&lt;48</td><td>&lt;120</td></tr>
   </tbody></table>
   <p class="muted" style="font-size:12.5px">The real dMAT reports standardised scores rather than a
-  pass mark; these bands are a practice target only.</p>`;
+  pass mark; these bands are a practice target only.</p>
+  <h2>Saved data</h2>
+  <p class="muted" style="font-size:13px">Everything is stored locally in this browser. Nothing is
+  uploaded anywhere.</p>
+  <div style="display:flex;gap:9px;flex-wrap:wrap">
+    <button class="btn" onclick="clearAllData()">Clear all saved data</button>
+  </div>`;
   window.scrollTo(0,0);
 }
 
-function startPaper(pid){
-  S = newSession(pid);
+function enterSession(){
   document.getElementById('tabs').classList.remove('hide');
   document.getElementById('foot').classList.remove('hide');
   document.getElementById('timer').classList.remove('hide');
+  const pri = document.getElementById('foot').querySelector('.btn.pri');
+  pri.textContent = 'Submit paper';
+  pri.onclick = finish;
   startTimer();
   render();
+}
+
+/* Entry point from a paper card: resume if there is a saved attempt. */
+function openPaper(pid){
+  if(Store.get(kProgress(pid), null)) resumePaper(pid);
+  else startPaper(pid, 'practice');
+}
+
+function startPaper(pid, mode){
+  S = newSession(pid, mode);
+  clearProgress(pid);
+  saveProgress(true);
+  enterSession();
+}
+
+function resumePaper(pid){
+  const snap = Store.get(kProgress(pid), null);
+  const S2 = snap ? sessionFrom(snap) : null;
+  if (!S2) { startPaper(pid, 'practice'); return; }
+  S = S2;
+  enterSession();
+}
+
+function restartPaper(pid){
+  if (!confirm('Discard the saved progress on Paper ' + pid + ' and start over?')) return;
+  clearProgress(pid);
+  goHome();
 }
 
 /* ================= timer ================= */
@@ -122,6 +353,8 @@ function startTimer(){
   tick = setInterval(()=>{
     if(!S || S.submitted) return;
     if(S.left[S.tab] > 0) S.left[S.tab]--;
+    S.spent[S.tab]++;
+    if(S.spent[S.tab] % 10 === 0) saveProgress(true);
     paintTimer();
   },1000);
   paintTimer();
@@ -143,7 +376,7 @@ function tabsHtml(){
       <span class="cnt">${done}/${s.n}</span></button>`;
   }).join('');
 }
-function setTab(i){ S.tab=i; render(); window.scrollTo(0,0); }
+function setTab(i){ S.tab=i; saveProgress(true); render(); window.scrollTo(0,0); }
 function nextTab(){ if(S.tab<3) setTab(S.tab+1); }
 function prevTab(){ if(S.tab>0) setTab(S.tab-1); }
 
@@ -151,6 +384,7 @@ function prevTab(){ if(S.tab>0) setTab(S.tab-1); }
 function pick(sec, key, val){
   if(S.submitted) return;
   S.ans[sec][key] = val;
+  saveProgress();
   render(true);
 }
 function setEq(i, v, el){
@@ -159,6 +393,7 @@ function setEq(i, v, el){
   cur[v] = el.value.trim();
   const filled = Object.values(cur).filter(x=>x!=='').length;
   if(filled===0) delete S.ans.me[i]; else S.ans.me[i]=cur;
+  saveProgress();
   paintFoot(); paintTabs();
 }
 function pickFs(i, which, opt){
@@ -166,6 +401,7 @@ function pickFs(i, which, opt){
   const cur = S.ans.fs[i] || {};
   cur[which] = opt;
   S.ans.fs[i] = cur;
+  saveProgress();
   render(true);
 }
 
@@ -358,32 +594,65 @@ function renderSub(){
 
 /* ================= scoring ================= */
 function score(){
-  const p = S.p, out = {fs:0, me:0, ls:0, sub:0, byLvl:{low:[0,0],medium:[0,0],high:[0,0]}, byTestlet:[]};
+  const p = S.p, out = {fs:0, me:0, ls:0, sub:0, byLvl:{low:[0,0],medium:[0,0],high:[0,0]},
+                        byTestlet:[], wrong:[]};
   p.fs.forEach(it=>{
     const a = S.ans.fs[it.n]||{};
     let m = 0;
     if(a.a1===it.a1) m++;
     if(a.a2===it.a2) m++;
     out.fs += m; out.byLvl[it.lvl][0]+=m; out.byLvl[it.lvl][1]+=2;
+    if(m<2) out.wrong.push({sec:'fs', n:it.n});
   });
   p.me.forEach(it=>{
     const a = S.ans.me[it.n]||{};
     const ok = it.vars.every(v=>String(a[v])===String(it.sol[v]));
     const m = ok?2:0;
     out.me += m; out.byLvl[it.lvl][0]+=m; out.byLvl[it.lvl][1]+=2;
+    if(m<2) out.wrong.push({sec:'me', n:it.n});
   });
   p.ls.forEach(it=>{
     const m = (S.ans.ls[it.n]===it.ans)?2:0;
     out.ls += m; out.byLvl[it.lvl][0]+=m; out.byLvl[it.lvl][1]+=2;
+    if(m<2) out.wrong.push({sec:'ls', n:it.n});
   });
   p.subject.forEach(t=>{
     let got=0, tot=0;
-    t.questions.forEach(q=>{ tot+=2; if(S.ans.sub[q.n]===q.ans){got+=2; out.sub+=2;} });
+    t.questions.forEach(q=>{
+      tot+=2;
+      if(S.ans.sub[q.n]===q.ans){ got+=2; out.sub+=2; }
+      else out.wrong.push({sec:'sub', n:q.n});
+    });
     out.byTestlet.push({name:t.title, got:got, tot:tot});
   });
   out.core = out.fs+out.me+out.ls;
   out.total = out.core+out.sub;
   return out;
+}
+
+function flagList(){
+  const out = [];
+  SECT.forEach(sec => Object.keys(S.flags[sec.k] || {}).forEach(n => {
+    if (S.flags[sec.k][n]) out.push({sec: sec.k, n: Number(n)});
+  }));
+  return out;
+}
+
+function recordAttempt(){
+  const r = score();
+  pushHistory({
+    id: 'a' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6),
+    pid: S.pid,
+    date: new Date().toISOString(),
+    mode: S.mode,
+    total: r.total, core: r.core,
+    sect: {fs: r.fs, me: r.me, ls: r.ls, sub: r.sub},
+    byLvl: r.byLvl,
+    byTestlet: r.byTestlet,
+    spent: S.spent.slice(),
+    wrong: r.wrong,
+    flagged: flagList()
+  });
 }
 
 function finish(){
@@ -394,6 +663,7 @@ function finish(){
   }
   S.submitted = true;
   clearInterval(tick); tick=null;
+  if(S.kind === 'paper'){ recordAttempt(); clearProgress(S.pid); }
   document.getElementById('timer').classList.add('hide');
   document.getElementById('tabs').classList.add('hide');
   document.getElementById('foot').classList.add('hide');
@@ -459,6 +729,14 @@ function retake(){
   document.getElementById('foot').querySelector('.btn.pri').textContent = 'Submit paper';
   document.getElementById('foot').querySelector('.btn.pri').onclick = finish;
   startPaper(id);
+}
+
+/* Flush before the tab goes away; pagehide is the reliable one on mobile. */
+if (typeof window !== 'undefined') {
+  window.addEventListener('pagehide', () => saveProgress(true));
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'hidden') saveProgress(true);
+  });
 }
 
 /* ================= boot ================= */
