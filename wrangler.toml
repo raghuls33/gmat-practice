@@ -1,9 +1,18 @@
-# Cloudflare Pages project config.
-# Deploy is a direct upload of the pre-built dist/ folder — Cloudflare runs no
-# build step, so the project stays dependency-free and toolchain-free.
+# Cloudflare Workers static-assets config.
 #
-#   npx wrangler login
-#   npx wrangler pages project create gmat-practice --production-branch main
-#   npx wrangler pages deploy
+# dist/ is committed and pre-built, so the only build step is build.sh, which
+# needs nothing but a POSIX shell — no npm install, no bundler, no toolchain.
+#
+# There is deliberately no `main`: this Worker serves static assets only, so no
+# Worker script runs. There is also no `pages_build_output_dir` — that key marks
+# a project as Pages, which makes `wrangler deploy` refuse with
+# "you have run `wrangler deploy` on a Pages project".
+#
+# Workers Builds settings that match this file:
+#   Build command   npm run build
+#   Deploy command  npx wrangler deploy
 name = "gmat-practice"
-pages_build_output_dir = "dist"
+compatibility_date = "2026-08-19"
+
+[assets]
+directory = "./dist"
